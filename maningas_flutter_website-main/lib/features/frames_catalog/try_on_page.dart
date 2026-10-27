@@ -20,38 +20,40 @@ class _TryOnPageState extends State<TryOnPage> {
   @override
   Widget build(BuildContext context) => Material(
     color: Colors.black,
-    child: Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned.fill(child: TryOnIframe(uri: widget.uri)),
-        SafeArea(
-          child: Align(
-            alignment: Alignment.topRight,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Material(
-                color: Colors.transparent,
-                child: Semantics(
-                  button: true,
-                  label: 'Close Try-On',
-                  child: IconButton.filled(
-                    key: const ValueKey('close-try-on'),
-                    tooltip: 'Close Try-On',
-                    onPressed: _closeTryOn,
-                    style: IconButton.styleFrom(
-                      backgroundColor: const Color(0xD9000000),
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(48, 48),
-                      maximumSize: const Size(48, 48),
+    child: SafeArea(
+      child: Column(
+        children: [
+          ColoredBox(
+            color: const Color(0xFF111827),
+            child: SizedBox(
+              height: 56,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Semantics(
+                    button: true,
+                    label: 'Close Try-On',
+                    child: IconButton.filled(
+                      key: const ValueKey('close-try-on'),
+                      tooltip: 'Close Try-On',
+                      onPressed: _closeTryOn,
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xD9000000),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(48, 48),
+                        maximumSize: const Size(48, 48),
+                      ),
+                      icon: const Icon(Icons.close),
                     ),
-                    icon: const Icon(Icons.close),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+          Expanded(child: TryOnIframe(uri: widget.uri)),
+        ],
+      ),
     ),
   );
 }
