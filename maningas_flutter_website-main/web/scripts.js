@@ -1825,6 +1825,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const mobileTryOn = urlParams.get("mobileTryOn") === "true";
 
+  if (mobileTryOn) {
+    document.body.dataset.mobileTryOn = "true";
+
+    window.addEventListener("message", (event) => {
+      if (event.source === window.parent && event.data === "close-try-on") {
+        closeVirtualTryOn();
+      }
+    });
+  }
+
   async function openMobileTryOn() {
     if (!mobileTryOn || !targetFrameId) {
       return;

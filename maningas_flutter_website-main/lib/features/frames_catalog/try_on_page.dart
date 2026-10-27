@@ -13,8 +13,12 @@ class TryOnPage extends StatefulWidget {
 }
 
 class _TryOnPageState extends State<TryOnPage> {
+  final _iframeKey = GlobalKey<TryOnIframeState>();
+
   void _closeTryOn() {
-    if (mounted) widget.onClose();
+    if (!mounted) return;
+    _iframeKey.currentState?.close();
+    widget.onClose();
   }
 
   @override
@@ -51,7 +55,9 @@ class _TryOnPageState extends State<TryOnPage> {
               ),
             ),
           ),
-          Expanded(child: TryOnIframe(uri: widget.uri)),
+          Expanded(
+            child: TryOnIframe(key: _iframeKey, uri: widget.uri),
+          ),
         ],
       ),
     ),

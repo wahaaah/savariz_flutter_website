@@ -7,11 +7,15 @@ class TryOnIframe extends StatefulWidget {
   final Uri uri;
 
   @override
-  State<TryOnIframe> createState() => _TryOnIframeState();
+  State<TryOnIframe> createState() => TryOnIframeState();
 }
 
-class _TryOnIframeState extends State<TryOnIframe> {
+class TryOnIframeState extends State<TryOnIframe> {
   web.HTMLIFrameElement? _iframe;
+
+  void close() {
+    _iframe?.contentWindow?.postMessage('close-try-on', '*');
+  }
 
   void _configureIframe(Object element) {
     final iframe = element as web.HTMLIFrameElement;
