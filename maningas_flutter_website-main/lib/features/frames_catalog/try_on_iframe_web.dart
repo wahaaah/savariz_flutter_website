@@ -1,3 +1,5 @@
+import 'dart:js_interop';
+
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
@@ -14,7 +16,7 @@ class TryOnIframeState extends State<TryOnIframe> {
   web.HTMLIFrameElement? _iframe;
 
   void close() {
-    _iframe?.contentWindow?.postMessage('close-try-on', '*');
+    _iframe?.contentWindow?.postMessage('close-try-on'.toJS, '*'.toJS);
   }
 
   void _configureIframe(Object element) {
