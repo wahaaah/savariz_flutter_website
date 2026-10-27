@@ -20,6 +20,29 @@ For local development, HTTP is allowed only for `localhost`, `127.0.0.1`, or
 `::1`. All other API hosts must use HTTPS. There is no demo-auth switch or
 sample account data.
 
+## Deploy to Vercel through GitHub
+
+The repository includes a GitHub Actions workflow that builds this Flutter Web
+app and deploys the generated `build/web` files to Vercel whenever a commit is
+pushed to `main`.
+
+1. Create or import a Vercel project for this app. If prompted for a project
+   root, select `maningas_flutter_website-main`.
+2. In Vercel, find the project and team IDs in its settings, and create a Vercel
+   access token.
+3. In the GitHub repository, open **Settings > Secrets and variables >
+   Actions** and add these repository secrets:
+   - `VERCEL_TOKEN` — the Vercel access token.
+   - `VERCEL_ORG_ID` — the Vercel team/user ID.
+   - `VERCEL_PROJECT_ID` — the Vercel project ID.
+4. Push a commit to `main`. Check the **Actions** tab in GitHub for the build
+   and deployment result.
+
+The workflow installs Flutter in GitHub Actions, so Flutter does not need to be
+installed in Vercel's build environment or configured on your computer to
+trigger deployments. Vercel serves the resulting static site. Configure the
+backend's CORS allowlist to include the Vercel deployment domain.
+
 ## Where to connect the existing backend
 
 - `lib\core\config\api_config.dart` — API host configuration.
