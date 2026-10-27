@@ -140,9 +140,18 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
         return;
       }
       setState(() {
+        final messagesByTicketId = {
+          for (final ticket in _tickets)
+            ticket.id: ticket.messages,
+        };
         _tickets
           ..clear()
-          ..addAll(tickets);
+          ..addAll([
+            for (final ticket in tickets)
+              ticket.withMessages(
+                messagesByTicketId[ticket.id] ?? ticket.messages,
+              ),
+          ]);
         _loadError = null;
       });
     } on ApiFailure catch (failure) {
@@ -181,9 +190,18 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
       );
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
+        final messagesByTicketId = {
+          for (final ticket in _tickets)
+            ticket.id: ticket.messages,
+        };
         _tickets
           ..clear()
-          ..addAll(tickets);
+          ..addAll([
+            for (final ticket in tickets)
+              ticket.withMessages(
+                messagesByTicketId[ticket.id] ?? ticket.messages,
+              ),
+          ]);
         _isLoading = false;
         if (_selectedTicketId != null &&
             !_tickets.any((ticket) => ticket.id == _selectedTicketId)) {
@@ -239,9 +257,18 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
         }
       }
       setState(() {
+        final messagesByTicketId = {
+          for (final ticket in _tickets)
+            ticket.id: ticket.messages,
+        };
         _tickets
           ..clear()
-          ..addAll(latestTickets);
+          ..addAll([
+            for (final ticket in latestTickets)
+              ticket.withMessages(
+                messagesByTicketId[ticket.id] ?? ticket.messages,
+              ),
+          ]);
         if (latest == null) _selectedTicketId = null;
       });
       if (latest == null) {

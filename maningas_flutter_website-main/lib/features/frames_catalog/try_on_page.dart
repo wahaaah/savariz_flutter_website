@@ -29,14 +29,24 @@ class _TryOnPageState extends State<TryOnPage> {
             alignment: Alignment.topRight,
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: IconButton.filled(
-                tooltip: 'Close Try-On',
-                onPressed: _closeTryOn,
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black54,
-                  foregroundColor: Colors.white,
+              child: Material(
+                color: Colors.transparent,
+                child: Semantics(
+                  button: true,
+                  label: 'Close Try-On',
+                  child: IconButton.filled(
+                    key: const ValueKey('close-try-on'),
+                    tooltip: 'Close Try-On',
+                    onPressed: _closeTryOn,
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xD9000000),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(48, 48),
+                      maximumSize: const Size(48, 48),
+                    ),
+                    icon: const Icon(Icons.close),
+                  ),
                 ),
-                icon: const Icon(Icons.close),
               ),
             ),
           ),

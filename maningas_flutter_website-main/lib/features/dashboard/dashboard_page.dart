@@ -74,7 +74,7 @@ class _DashboardPageState extends State<DashboardPage> {
           height: (size.height - 48).clamp(360.0, 720.0).toDouble(),
           child: TryOnPage(
             uri: uri,
-            onClose: () => Navigator.of(context).pop(),
+            onClose: () => Navigator.of(context, rootNavigator: true).pop(),
           ),
         ),
       ),
