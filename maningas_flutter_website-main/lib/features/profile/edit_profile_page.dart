@@ -211,12 +211,21 @@ class _EditProfilePageState extends State<EditProfilePage> {
     List<PhilippineAddressOption> options,
     String value,
   ) {
-    final normalized = value.trim().toLowerCase();
+    final normalized = _normalizeAddressName(value);
     if (normalized.isEmpty) return null;
     for (final option in options) {
-      if (option.name.trim().toLowerCase() == normalized) return option;
+      if (_normalizeAddressName(option.name) == normalized) return option;
     }
     return null;
+  }
+
+  String _normalizeAddressName(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'^(city of|municipality of|province of|barangay )'), '')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .trim();
   }
 
   Future<void> _retryLoadProfile() async {
@@ -247,6 +256,28 @@ class _EditProfilePageState extends State<EditProfilePage> {
       age--;
     }
     return age;
+  }
+
+  Future<void> _selectDateOfBirth() async {
+    final initial = _parseDate(_controllers['dateOfBirth']!.text) ??
+        DateTime(DateTime.now().year - 18, 1, 1);
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      helpText: 'Select Date of Birth',
+    );
+    if (selected == null || !mounted) return;
+    final value =
+        '${selected.year.toString().padLeft(4, '0')}-'
+        '${selected.month.toString().padLeft(2, '0')}-'
+        '${selected.day.toString().padLeft(2, '0')}';
+    setState(() {
+      _controllers['dateOfBirth']!.text = value;
+      _controllers['age']!.text = _calculateAge(value)?.toString() ?? '';
+      _status = null;
+    });
   }
 
   DateTime? _parseDate(String value) {
@@ -421,7 +452,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               'dateOfBirth',
                               'Date of Birth *',
                               hint: 'YYYY-MM-DD',
-                              keyboardType: TextInputType.datetime,
+                              readOnly: true,
+                              onTap: _selectDateOfBirth,
                             ),
                             _textField(
                               'age',
@@ -736,6 +768,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     String? hint,
     TextInputType? keyboardType,
     bool readOnly = false,
+    VoidCallback? onTap,
     List<TextInputFormatter>? inputFormatters,
   }) {
     return _LabeledField(
@@ -745,6 +778,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         controller: _controllers[id],
         readOnly: readOnly,
         keyboardType: keyboardType,
+        onTap: onTap,
         inputFormatters: inputFormatters,
         onChanged: (value) => _onChanged(id, value),
         validator: (_) => _validateText(id),
@@ -758,6 +792,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
           ),
           suffixIcon: id == 'age'
               ? const Icon(Icons.lock_outline_rounded, size: 17)
+              : id == 'dateOfBirth'
+              ? const Icon(Icons.calendar_today_outlined, size: 19)
               : null,
         ),
       ),

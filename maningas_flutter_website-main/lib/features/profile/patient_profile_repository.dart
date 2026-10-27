@@ -47,15 +47,17 @@ class PatientProfileDetails {
       rawPatient['lastname'],
       rawPatient['lastName'],
     ]);
-    final fullName = _firstValue([
-      rawPatient['full_name'],
-      rawPatient['fullName'],
-      rawPatient['name'],
-    ]) ??
-        [firstName, middleName, lastName]
-            .whereType<String>()
-            .where((part) => part.trim().isNotEmpty)
-            .join(' ');
+    final fullName =
+        _firstValue([
+          rawPatient['full_name'],
+          rawPatient['fullName'],
+          rawPatient['name'],
+        ]) ??
+        [
+          firstName,
+          middleName,
+          lastName,
+        ].whereType<String>().where((part) => part.trim().isNotEmpty).join(' ');
     final addressString = address is String ? _nonEmpty(address) : null;
     final addressUnit = _firstValue([
       rawPatient['address_unit'],
@@ -84,6 +86,10 @@ class PatientProfileDetails {
       addressMap['address_barangay'],
       addressMap['addressBarangay'],
       addressMap['barangay'],
+      rawPatient['barangay_name'],
+      rawPatient['barangayName'],
+      addressMap['barangay_name'],
+      addressMap['barangayName'],
     ]);
     final cityMunicipality = _firstValue([
       rawPatient['address_city_municipality'],
@@ -92,6 +98,12 @@ class PatientProfileDetails {
       rawPatient['cityMunicipality'],
       rawPatient['municipality'],
       rawPatient['city'],
+      rawPatient['municipality_name'],
+      rawPatient['municipalityName'],
+      rawPatient['city_name'],
+      rawPatient['cityName'],
+      rawPatient['city_municipality_name'],
+      rawPatient['cityMunicipalityName'],
       addressMap['address_city_municipality'],
       addressMap['addressCityMunicipality'],
       addressMap['city_municipality'],
@@ -103,6 +115,8 @@ class PatientProfileDetails {
       rawPatient['address_province'],
       rawPatient['addressProvince'],
       rawPatient['province'],
+      rawPatient['province_name'],
+      rawPatient['provinceName'],
       addressMap['address_province'],
       addressMap['addressProvince'],
       addressMap['province'],
@@ -148,15 +162,17 @@ class PatientProfileDetails {
         rawPatient['email_address'],
         rawPatient['emailAddress'],
       ]),
-      dateOfBirth: _firstValue([
-        rawPatient['date_of_birth'],
-        rawPatient['dateOfBirth'],
-        rawPatient['dob'],
-        rawPatient['birth_date'],
-        rawPatient['birthDate'],
-        rawPatient['birthdate'],
-        rawPatient['dateofbirth'],
-      ]),
+      dateOfBirth: _normaliseDate(
+        _firstValue([
+          rawPatient['date_of_birth'],
+          rawPatient['dateOfBirth'],
+          rawPatient['dob'],
+          rawPatient['birth_date'],
+          rawPatient['birthDate'],
+          rawPatient['birthdate'],
+          rawPatient['dateofbirth'],
+        ]),
+      ),
       gender: _firstValue([rawPatient['gender']]),
       contactNumber: _firstValue([
         rawPatient['contact_number'],
@@ -307,6 +323,13 @@ Object? _nestedContactValue(Map<String, dynamic> patient) {
     }
   }
   return null;
+}
+
+String? _normaliseDate(Object? value) {
+  final text = value is String ? value.trim() : null;
+  if (text == null) return null;
+  final match = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(text);
+  return match?.group(0);
 }
 
 String? _nonEmpty(String value) => value.trim().isEmpty ? null : value.trim();
