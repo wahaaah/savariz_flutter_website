@@ -223,7 +223,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
     return value
         .trim()
         .toLowerCase()
-        .replaceAll(RegExp(r'^(city of|municipality of|province of|barangay )'), '')
+        .replaceAll(
+          RegExp(r'^(city of|municipality of|province of|barangay )'),
+          '',
+        )
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .trim();
   }
@@ -259,14 +262,25 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _selectDateOfBirth() async {
-    final initial = _parseDate(_controllers['dateOfBirth']!.text) ??
-        DateTime(DateTime.now().year - 18, 1, 1);
+    FocusScope.of(context).unfocus();
+    final existingDate = _parseDate(_controllers['dateOfBirth']!.text);
+    final initial = existingDate ?? DateTime(DateTime.now().year - 18, 1, 1);
     final selected = await showDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
+      lastDate: DateUtils.dateOnly(DateTime.now()),
       helpText: 'Select Date of Birth',
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (dialogContext, child) => Theme(
+        data: Theme.of(dialogContext),
+        child: MediaQuery(
+          data: MediaQuery.of(dialogContext)
+              .copyWith(textScaler: TextScaler.noScaling),
+          child: child!,
+        ),
+      ),
     );
     if (selected == null || !mounted) return;
     final value =
@@ -484,7 +498,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     const SizedBox(height: 18),
                     _ProfileSection(
                       title: 'Address',
-                      description: 'Your residential address from your clinic account.',
+                      description:
+                          'Your residential address from your clinic account.',
                       icon: Icons.location_on_outlined,
                       child: Column(
                         children: [
@@ -534,7 +549,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                   _barangayId = null;
                                   _controllers['addressProvince']!.text =
                                       option?.name ?? '';
-                                  _controllers['addressCityMunicipality']!.text =
+                                  _controllers['addressCityMunicipality']!
+                                          .text =
                                       '';
                                   _controllers['addressBarangay']!.text = '';
                                   _status = null;
@@ -551,8 +567,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               options: _provinceId == null
                                   ? const []
                                   : _addressCatalog?.municipalitiesFor(
-                                        _provinceId!,
-                                      ) ??
+                                          _provinceId!,
+                                        ) ??
                                         const [],
                               onChanged: (cityId) {
                                 final options = _provinceId == null
@@ -565,7 +581,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                 setState(() {
                                   _cityId = cityId;
                                   _barangayId = null;
-                                  _controllers['addressCityMunicipality']!.text =
+                                  _controllers['addressCityMunicipality']!
+                                          .text =
                                       option?.name ?? '';
                                   _controllers['addressBarangay']!.text = '';
                                   _status = null;
@@ -590,7 +607,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                 final options = _cityId == null
                                     ? const <PhilippineAddressOption>[]
                                     : _addressCatalog?.barangaysFor(_cityId!) ??
-                                        const <PhilippineAddressOption>[];
+                                          const <PhilippineAddressOption>[];
                                 final option = _addressOption(
                                   options,
                                   barangayId,
@@ -799,7 +816,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       ),
     );
   }
-
 }
 
 class _PageHeader extends StatelessWidget {
