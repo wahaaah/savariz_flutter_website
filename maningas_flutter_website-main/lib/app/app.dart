@@ -30,6 +30,7 @@ class PatientPortalApp extends StatefulWidget {
 
 class _PatientPortalAppState extends State<PatientPortalApp> {
   ThemeMode _themeMode = ThemeMode.light;
+  bool _isLoggingOut = false;
   late final PatientAuthController _controller;
   late final bool _ownsController;
   late final FramesCatalogRepository _framesCatalogRepository;
@@ -93,9 +94,15 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
     });
   }
 
-  void _logout() {
+  Future<void> _logout() async {
+    setState(() => _isLoggingOut = true);
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+    if (!mounted) return;
     _controller.logout();
-    setState(() => _themeMode = ThemeMode.light);
+    setState(() {
+      _themeMode = ThemeMode.light;
+      _isLoggingOut = false;
+    });
   }
 
   @override
@@ -114,28 +121,53 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
         theme: PatientPortalTheme.light,
         darkTheme: PatientPortalTheme.dark,
         themeMode: _themeMode,
-        home: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            if (_controller.isLoadingIdentity) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
-            }
-            final authenticated = _controller.currentSession != null;
-            if (!authenticated) {
-              return Theme(
-                data: PatientPortalTheme.light,
-                child: LoginPage(controller: _controller),
-              );
-            }
-            return DashboardPage(
-              isDark: _themeMode == ThemeMode.dark,
-              onToggleTheme: _toggleTheme,
-              onLogout: _logout,
-              logoutEnabled: authenticated,
-            );
-          },
+        home: Stack(
+          fit: StackFit.expand,
+          children: [
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                if (_controller.isLoadingIdentity) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final authenticated = _controller.currentSession != null;
+                if (!authenticated) {
+                  return Theme(
+                    data: PatientPortalTheme.light,
+                    child: LoginPage(controller: _controller),
+                  );
+                }
+                return DashboardPage(
+                  isDark: _themeMode == ThemeMode.dark,
+                  onToggleTheme: _toggleTheme,
+                  onLogout: _logout,
+                  logoutEnabled: authenticated,
+                );
+              },
+            ),
+            if (_isLoggingOut)
+              ColoredBox(
+                color: const Color(0xCC0F172A),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: Colors.white),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Logging out…',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

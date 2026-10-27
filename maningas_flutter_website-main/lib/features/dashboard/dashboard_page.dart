@@ -72,7 +72,10 @@ class _DashboardPageState extends State<DashboardPage> {
         child: SizedBox(
           width: (size.width - 32).clamp(280.0, 920.0).toDouble(),
           height: (size.height - 48).clamp(360.0, 720.0).toDouble(),
-          child: TryOnPage(uri: uri),
+          child: TryOnPage(
+            uri: uri,
+            onClose: () => Navigator.of(context).pop(),
+          ),
         ),
       ),
     );

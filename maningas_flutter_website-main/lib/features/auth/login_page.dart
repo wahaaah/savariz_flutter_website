@@ -22,6 +22,7 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _passwordFocusNode = FocusNode();
   bool _showPassword = false;
   bool _rememberMe = false;
   bool _hasSubmitted = false;
@@ -42,6 +43,7 @@ class _LoginPageState extends State<LoginPage> {
     if (_ownsController) _controller?.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -146,14 +148,19 @@ class _LoginPageState extends State<LoginPage> {
           formKey: _formKey,
           emailController: _emailController,
           passwordController: _passwordController,
+          passwordFocusNode: _passwordFocusNode,
           showPassword: _showPassword,
           rememberMe: _rememberMe,
           hasSubmitted: _hasSubmitted,
           feedbackMessage: _feedbackMessage,
           feedbackIsError: _feedbackIsError,
           isLoading: _controller?.isLoading ?? false,
-          onTogglePassword: () =>
-              setState(() => _showPassword = !_showPassword),
+          onTogglePassword: () {
+            setState(() => _showPassword = !_showPassword);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _passwordFocusNode.requestFocus();
+            });
+          },
           onRememberChanged: (value) => setState(() => _rememberMe = value),
           onChanged: () {
             if (_feedbackMessage != null) {
@@ -347,6 +354,7 @@ class _LoginFormPanel extends StatelessWidget {
     required this.formKey,
     required this.emailController,
     required this.passwordController,
+    required this.passwordFocusNode,
     required this.showPassword,
     required this.rememberMe,
     required this.hasSubmitted,
@@ -370,6 +378,7 @@ class _LoginFormPanel extends StatelessWidget {
   final GlobalKey<FormState> formKey;
   final TextEditingController emailController;
   final TextEditingController passwordController;
+  final FocusNode passwordFocusNode;
   final bool showPassword;
   final bool rememberMe;
   final bool hasSubmitted;
@@ -409,6 +418,7 @@ class _LoginFormPanel extends StatelessWidget {
           formKey: formKey,
           emailController: emailController,
           passwordController: passwordController,
+          passwordFocusNode: passwordFocusNode,
           showPassword: showPassword,
           rememberMe: rememberMe,
           hasSubmitted: hasSubmitted,
@@ -471,6 +481,7 @@ class _LoginCard extends StatelessWidget {
     required this.formKey,
     required this.emailController,
     required this.passwordController,
+    required this.passwordFocusNode,
     required this.showPassword,
     required this.rememberMe,
     required this.hasSubmitted,
@@ -492,6 +503,7 @@ class _LoginCard extends StatelessWidget {
   final GlobalKey<FormState> formKey;
   final TextEditingController emailController;
   final TextEditingController passwordController;
+  final FocusNode passwordFocusNode;
   final bool showPassword;
   final bool rememberMe;
   final bool hasSubmitted;
@@ -629,6 +641,7 @@ class _LoginCard extends StatelessWidget {
                   label: 'Password',
                   placeholder: 'Enter your password',
                   controller: passwordController,
+                  focusNode: passwordFocusNode,
                   obscureText: !showPassword,
                   textInputAction: TextInputAction.done,
                   validator: (value) => (value ?? '').isEmpty
@@ -858,6 +871,7 @@ class _LoginField extends StatelessWidget {
     required this.label,
     required this.placeholder,
     required this.controller,
+    this.focusNode,
     required this.validator,
     required this.onChanged,
     this.keyboardType,
@@ -869,6 +883,7 @@ class _LoginField extends StatelessWidget {
   final String label;
   final String placeholder;
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final String? Function(String?) validator;
   final ValueChanged<String> onChanged;
   final TextInputType? keyboardType;
@@ -902,6 +917,7 @@ class _LoginField extends StatelessWidget {
                 child: TextField(
                   key: ValueKey('login-$label'),
                   controller: controller,
+                  focusNode: focusNode,
                   keyboardType: keyboardType,
                   textInputAction: textInputAction,
                   obscureText: obscureText,

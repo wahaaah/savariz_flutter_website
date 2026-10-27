@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'try_on_iframe.dart';
 
 class TryOnPage extends StatefulWidget {
-  const TryOnPage({required this.uri, super.key});
+  const TryOnPage({required this.uri, required this.onClose, super.key});
 
   final Uri uri;
+  final VoidCallback onClose;
 
   @override
   State<TryOnPage> createState() => _TryOnPageState();
@@ -13,7 +14,7 @@ class TryOnPage extends StatefulWidget {
 
 class _TryOnPageState extends State<TryOnPage> {
   void _closeTryOn() {
-    if (mounted) Navigator.of(context).maybePop();
+    if (mounted) widget.onClose();
   }
 
   @override
