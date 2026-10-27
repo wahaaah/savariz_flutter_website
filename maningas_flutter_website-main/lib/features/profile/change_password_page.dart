@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
+import '../../core/network/api_failure.dart';
+import '../auth/application/patient_auth_scope.dart';
+import '../auth/application/patient_auth_controller.dart';
 
 class ChangePasswordPage extends StatefulWidget {
   const ChangePasswordPage({super.key});
@@ -30,6 +33,14 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   bool _otpStatusIsError = false;
   Timer? _resendTimer;
   int _resendSeconds = 0;
+  bool _isSubmitting = false;
+  PatientAuthController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controller ??= PatientAuthScope.maybeOf(context);
+  }
 
   @override
   void dispose() {
@@ -91,23 +102,52 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     return null;
   }
 
-  void _changePassword() {
+  Future<void> _changePassword() async {
     FocusScope.of(context).unfocus();
-    final valid = _formKey.currentState!.validate();
-    if (!valid) {
-      setState(() => _status = null);
+    if (!_formKey.currentState!.validate() || _isSubmitting) return;
+
+    final controller = _controller;
+    final session = controller?.currentSession;
+    if (controller == null || session == null) {
+      setState(() {
+        _status = 'Please sign in again before changing your password.';
+      });
       return;
     }
+
     setState(() {
-      _status = 'Password changes are not connected to the clinic API. Nothing was changed.';
-      _otpStatus = null;
-      _otpStatusIsError = false;
-      _showOtpStep = false;
-      _showSuccessStep = false;
+      _isSubmitting = true;
+      _status = null;
     });
+    try {
+      await controller.repository.login(
+        email: session.email,
+        password: _currentPasswordController.text,
+        rememberMe: session.rememberMe,
+      );
+      final message = await controller.repository.requestPasswordReset(
+        email: session.email,
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = null;
+        _otpStatus = message;
+        _otpStatusIsError = false;
+        _showOtpStep = true;
+        _showSuccessStep = false;
+        _startResendCountdown();
+      });
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _status = failure.message;
+      });
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
-  void _verifyOtp() {
+  Future<void> _verifyOtp() async {
     FocusScope.of(context).unfocus();
     if (!RegExp(r'^\d{6}$').hasMatch(_otpController.text)) {
       setState(() {
@@ -116,11 +156,45 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
       });
       return;
     }
+    if (_isSubmitting) return;
+    final controller = _controller;
+    final session = controller?.currentSession;
+    if (controller == null || session == null) {
+      setState(() {
+        _otpStatus = 'Please sign in again before changing your password.';
+        _otpStatusIsError = true;
+      });
+      return;
+    }
+
     setState(() {
-      _otpStatus =
-          'Password change verification is not connected to the clinic API.';
-      _otpStatusIsError = true;
+      _isSubmitting = true;
+      _otpStatus = null;
+      _otpStatusIsError = false;
     });
+    try {
+      final message = await controller.repository.resetPassword(
+        email: session.email,
+        otp: _otpController.text.trim(),
+        newPassword: _newPasswordController.text,
+      );
+      if (!mounted) return;
+      _resendTimer?.cancel();
+      setState(() {
+        _otpStatus = message;
+        _otpStatusIsError = false;
+        _showOtpStep = false;
+        _showSuccessStep = true;
+      });
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _otpStatus = failure.message;
+        _otpStatusIsError = true;
+      });
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   void _cancelOtp() {
@@ -137,12 +211,53 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     });
   }
 
-  void _resendVerificationCode() {
-    if (_resendSeconds > 0) return;
+  Future<void> _resendVerificationCode() async {
+    if (_resendSeconds > 0 || _isSubmitting) return;
+    final controller = _controller;
+    final session = controller?.currentSession;
+    if (controller == null || session == null) return;
+
     setState(() {
-      _otpStatus =
-          'Verification-code resend is not connected to the clinic API.';
-      _otpStatusIsError = true;
+      _isSubmitting = true;
+      _otpStatus = null;
+      _otpStatusIsError = false;
+    });
+    try {
+      final message = await controller.repository.requestPasswordReset(
+        email: session.email,
+      );
+      if (!mounted) return;
+      setState(() {
+        _otpStatus = message;
+        _otpStatusIsError = false;
+        _startResendCountdown();
+      });
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _otpStatus = failure.message;
+        _otpStatusIsError = true;
+      });
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _startResendCountdown() {
+    _resendTimer?.cancel();
+    setState(() => _resendSeconds = 60);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _resendSeconds--;
+        if (_resendSeconds <= 0) {
+          _resendSeconds = 0;
+          timer.cancel();
+        }
+      });
     });
   }
 
@@ -156,7 +271,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     }
     setState(() {
       _showSuccessStep = false;
-      _status = 'Password changes are not connected to the clinic API.';
+      _status = 'Your password was changed successfully.';
     });
   }
 
@@ -167,7 +282,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     }
     _clearPasswordValues();
     setState(() {
-      _status = 'Password entries were cleared. No changes were saved.';
+      _status = null;
     });
   }
 
@@ -279,9 +394,22 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                               final vertical = buttonConstraints.maxWidth < 430;
                               final changeButton = FilledButton.icon(
                                 key: const ValueKey('change-password-submit'),
-                                onPressed: _changePassword,
-                                icon: const Icon(Icons.lock_reset_rounded),
-                                label: const Text('Change Password'),
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : _changePassword,
+                                icon: _isSubmitting
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.lock_reset_rounded),
+                                label: Text(
+                                  _isSubmitting
+                                      ? 'Verifying…'
+                                      : 'Change Password',
+                                ),
                               );
                               final cancelButton = OutlinedButton.icon(
                                 key: const ValueKey('change-password-cancel'),
@@ -321,7 +449,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                           ),
                           const SizedBox(height: 14),
                           Text(
-                            'Password rules are not confirmed against the clinic account policy.',
+                            'A verification code will be sent to your registered email.',
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
@@ -379,7 +507,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Password changes are not connected to the clinic API.',
+                'Enter the 6-digit code sent to your registered email.',
                 style: Theme.of(context).textTheme.bodyMedium
                     ?.copyWith(color: secondary, height: 1.5),
               ),
@@ -389,8 +517,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Password changes are not connected to the clinic API. '
-                      'No code has been sent.',
+                      'For security, verify the code before your password is changed.',
                       key: ValueKey('change-password-api-notice'),
                       style: TextStyle(
                         color: Color(0xFF1D4ED8),
@@ -448,16 +575,25 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                       height: 48,
                       child: FilledButton.icon(
                         key: const ValueKey('change-password-otp-verify'),
-                        onPressed: _verifyOtp,
-                        icon: const Icon(Icons.verified_outlined),
-                        label: const Text('Verify Code'),
+                        onPressed: _isSubmitting ? null : _verifyOtp,
+                        icon: _isSubmitting
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.verified_outlined),
+                        label: Text(
+                          _isSubmitting ? 'Changing…' : 'Verify Code',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Center(
                       child: TextButton(
                         key: const ValueKey('change-password-otp-resend'),
-                        onPressed: _resendSeconds > 0
+                        onPressed: _resendSeconds > 0 || _isSubmitting
                             ? null
                             : _resendVerificationCode,
                         child: Text(
@@ -469,8 +605,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                     ),
                     if (_resendSeconds > 0)
                       Text(
-                        'LOCAL SIMULATION: Resend available in '
-                        '${_resendSeconds}s. No code was sent.',
+                        'The code can be resent in ${_resendSeconds}s.',
                         key: const ValueKey('change-password-otp-countdown'),
                         textAlign: TextAlign.center,
                         style: TextStyle(color: secondary, fontSize: 12),
@@ -522,9 +657,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
               ),
               const SizedBox(height: 16),
               const _StatusMessage(
-                message:
-                    'Password changes are not connected to the clinic API. '
-                    'No password was changed.',
+                message: 'Your password was changed successfully.',
                 isSuccess: true,
               ),
               const SizedBox(height: 22),
@@ -568,31 +701,10 @@ class _PageHeader extends StatelessWidget {
         ),
       ],
     );
-    final unavailableBadge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        'NOT CONNECTED',
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.primary,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.4,
-        ),
-      ),
-    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (compact) ...[
-          brand,
-          const SizedBox(height: 8),
-          unavailableBadge,
-        ] else
-          Row(children: [brand, const Spacer(), unavailableBadge]),
+        brand,
         const SizedBox(height: 10),
         Text(
           'Change Password',
@@ -605,7 +717,7 @@ class _PageHeader extends StatelessWidget {
         ),
         const SizedBox(height: 7),
         Text(
-          'Password changes are not connected to the clinic API.',
+          'Verify your current password, then confirm the change with a one-time code.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: secondary,
             height: 1.55,
