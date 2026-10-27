@@ -7,6 +7,7 @@ import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
 import '../auth/application/patient_auth_scope.dart';
+import '../auth/data/philippine_address_catalog.dart';
 import '../auth/domain/patient_session.dart';
 import 'patient_profile_repository.dart';
 
@@ -31,6 +32,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
   bool _didLoadInitialDetails = false;
   int _loadGeneration = 0;
   String? _status;
+  PhilippineAddressCatalog? _addressCatalog;
+  String? _addressDataError;
+  bool _isLoadingAddressData = true;
+  String? _provinceId;
+  String? _cityId;
+  String? _barangayId;
 
   @override
   void initState() {
@@ -44,6 +51,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       _applyDetails(initialDetails);
       _didLoadInitialDetails = true;
     }
+    unawaited(_loadAddressCatalog());
   }
 
   @override
@@ -61,6 +69,26 @@ class _EditProfilePageState extends State<EditProfilePage> {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _loadAddressCatalog() async {
+    try {
+      final catalog = await PhilippineAddressCatalog.load();
+      if (!mounted) return;
+      setState(() {
+        _addressCatalog = catalog;
+        _isLoadingAddressData = false;
+        _addressDataError = null;
+        _syncAddressSelections();
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingAddressData = false;
+        _addressDataError =
+            'Philippine address choices could not be loaded. Please retry.';
+      });
+    }
   }
 
   void _loadPatientDetails() {
@@ -150,6 +178,45 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _controllers['addressProvince']!.text = details.province ?? '';
     _controllers['addressZipCode']!.text = details.zipCode ?? '';
     _controllers['gender']!.text = details.gender ?? '';
+    _syncAddressSelections();
+  }
+
+  void _syncAddressSelections() {
+    final catalog = _addressCatalog;
+    if (catalog == null) return;
+
+    final province = _findAddressOptionByName(
+      catalog.provinces,
+      _controllers['addressProvince']!.text,
+    );
+    final city = province == null
+        ? null
+        : _findAddressOptionByName(
+            catalog.municipalitiesFor(province.id),
+            _controllers['addressCityMunicipality']!.text,
+          );
+    final barangay = city == null
+        ? null
+        : _findAddressOptionByName(
+            catalog.barangaysFor(city.id),
+            _controllers['addressBarangay']!.text,
+          );
+
+    _provinceId = province?.id;
+    _cityId = city?.id;
+    _barangayId = barangay?.id;
+  }
+
+  PhilippineAddressOption? _findAddressOptionByName(
+    List<PhilippineAddressOption> options,
+    String value,
+  ) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+    for (final option in options) {
+      if (option.name.trim().toLowerCase() == normalized) return option;
+    }
+    return null;
   }
 
   Future<void> _retryLoadProfile() async {
@@ -397,19 +464,113 @@ class _EditProfilePageState extends State<EditProfilePage> {
                             _textField('addressStreet', 'Street *'),
                           ], stackedFields),
                           const SizedBox(height: 16),
-                          _fieldRow([
-                            _textField(
-                              'addressBarangay',
-                              'Barangay *',
+                          if (_isLoadingAddressData)
+                            const LinearProgressIndicator(
+                              key: ValueKey('edit-profile-address-loading'),
+                              minHeight: 3,
                             ),
-                            _textField(
-                              'addressCityMunicipality',
-                              'City / Municipality *',
+                          if (_addressDataError != null)
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _isLoadingAddressData = true;
+                                    _addressDataError = null;
+                                  });
+                                  unawaited(_loadAddressCatalog());
+                                },
+                                icon: const Icon(Icons.refresh, size: 16),
+                                label: const Text('Retry address choices'),
+                              ),
+                            ),
+                          _fieldRow([
+                            _addressDropdown(
+                              id: 'addressProvince',
+                              label: 'Province *',
+                              hint: 'Select Province',
+                              value: _provinceId,
+                              options: _addressCatalog?.provinces ?? const [],
+                              onChanged: (provinceId) {
+                                final option = _addressOption(
+                                  _addressCatalog?.provinces ?? const [],
+                                  provinceId,
+                                );
+                                setState(() {
+                                  _provinceId = provinceId;
+                                  _cityId = null;
+                                  _barangayId = null;
+                                  _controllers['addressProvince']!.text =
+                                      option?.name ?? '';
+                                  _controllers['addressCityMunicipality']!.text =
+                                      '';
+                                  _controllers['addressBarangay']!.text = '';
+                                  _status = null;
+                                });
+                              },
+                            ),
+                            _addressDropdown(
+                              id: 'addressCityMunicipality',
+                              label: 'City / Municipality *',
+                              hint: _provinceId == null
+                                  ? 'Select Province First'
+                                  : 'Select City / Municipality',
+                              value: _cityId,
+                              options: _provinceId == null
+                                  ? const []
+                                  : _addressCatalog?.municipalitiesFor(
+                                        _provinceId!,
+                                      ) ??
+                                        const [],
+                              onChanged: (cityId) {
+                                final options = _provinceId == null
+                                    ? const <PhilippineAddressOption>[]
+                                    : _addressCatalog?.municipalitiesFor(
+                                            _provinceId!,
+                                          ) ??
+                                          const <PhilippineAddressOption>[];
+                                final option = _addressOption(options, cityId);
+                                setState(() {
+                                  _cityId = cityId;
+                                  _barangayId = null;
+                                  _controllers['addressCityMunicipality']!.text =
+                                      option?.name ?? '';
+                                  _controllers['addressBarangay']!.text = '';
+                                  _status = null;
+                                });
+                              },
                             ),
                           ], stackedFields),
                           const SizedBox(height: 16),
                           _fieldRow([
-                            _textField('addressProvince', 'Province *'),
+                            _addressDropdown(
+                              id: 'addressBarangay',
+                              label: 'Barangay *',
+                              hint: _cityId == null
+                                  ? 'Select City / Municipality First'
+                                  : 'Select Barangay',
+                              value: _barangayId,
+                              options: _cityId == null
+                                  ? const []
+                                  : _addressCatalog?.barangaysFor(_cityId!) ??
+                                        const [],
+                              onChanged: (barangayId) {
+                                final options = _cityId == null
+                                    ? const <PhilippineAddressOption>[]
+                                    : _addressCatalog?.barangaysFor(_cityId!) ??
+                                        const <PhilippineAddressOption>[];
+                                final option = _addressOption(
+                                  options,
+                                  barangayId,
+                                );
+                                setState(() {
+                                  _barangayId = barangayId;
+                                  _controllers['addressBarangay']!.text =
+                                      option?.name ?? '';
+                                  _status = null;
+                                });
+                              },
+                            ),
                             _textField(
                               'addressZipCode',
                               'ZIP Code *',
@@ -517,6 +678,56 @@ class _EditProfilePageState extends State<EditProfilePage> {
       result.add(children[index]);
     }
     return result;
+  }
+
+  PhilippineAddressOption? _addressOption(
+    List<PhilippineAddressOption> options,
+    String? id,
+  ) {
+    for (final option in options) {
+      if (option.id == id) return option;
+    }
+    return null;
+  }
+
+  Widget _addressDropdown({
+    required String id,
+    required String label,
+    required String hint,
+    required String? value,
+    required List<PhilippineAddressOption> options,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final selectedValue = options.any((option) => option.id == value)
+        ? value
+        : null;
+    return _LabeledField(
+      label: label,
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('edit-profile-$id'),
+        initialValue: selectedValue,
+        isExpanded: true,
+        validator: (_) => _validateText(id),
+        onChanged: _addressCatalog == null ? null : onChanged,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hint,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 13,
+            vertical: 14,
+          ),
+        ),
+        items: options
+            .map(
+              (option) => DropdownMenuItem<String>(
+                value: option.id,
+                child: Text(option.name, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+      ),
+    );
   }
 
   Widget _textField(
