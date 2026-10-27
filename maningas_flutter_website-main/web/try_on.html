@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07101d" />
+    <title>Virtual Try-On | Gonzales Vision Clinic</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body { background: #07101d; font-family: system-ui, sans-serif; }
+      #faceFilterModal {
+        position: fixed; inset: 0; display: none; align-items: center;
+        justify-content: center; padding: 12px; background: #07101d;
+      }
+      .vto-dialog {
+        position: relative; width: min(100%, 920px); height: min(100%, 720px);
+        overflow: hidden; border-radius: 12px; background: #07101d;
+      }
+      #modal-container { position: absolute; inset: 0; }
+      #closeVTOBtn {
+        position: absolute; z-index: 5; top: 12px; right: 12px; width: 44px;
+        height: 44px; border: 0; border-radius: 50%; color: white;
+        background: #0f172acc; font-size: 26px; cursor: pointer;
+      }
+      #vto-status {
+        position: absolute; z-index: 4; top: 18px; left: 16px; right: 68px;
+        color: white; font: 500 14px/1.5 system-ui, sans-serif;
+        text-shadow: 0 1px 5px #000;
+      }
+      @media (max-width: 600px) {
+        #faceFilterModal { padding: 0; }
+        .vto-dialog { width: 100%; height: 100%; border-radius: 0; }
+      }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script defer src="./face-api.min.js"></script>
+    <script defer src="./scripts.js"></script>
+  </head>
+  <body data-api="https://api.gonzalesvisionclinic.com">
+    <div id="faceFilterModal" role="dialog" aria-modal="true" aria-label="Virtual Try-On">
+      <div class="vto-dialog">
+        <button id="closeVTOBtn" type="button" aria-label="Close Try-On">×</button>
+        <div id="modal-container"></div>
+        <div id="vto-status">Preparing virtual try-on...</div>
+      </div>
+    </div>
+  </body>
+</html>
