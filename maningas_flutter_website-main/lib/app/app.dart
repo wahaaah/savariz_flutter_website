@@ -127,11 +127,6 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
             AnimatedBuilder(
               animation: _controller,
               builder: (context, _) {
-                if (_controller.isLoadingIdentity) {
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                }
                 final authenticated = _controller.currentSession != null;
                 if (!authenticated) {
                   return Theme(
@@ -139,11 +134,21 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
                     child: LoginPage(controller: _controller),
                   );
                 }
-                return DashboardPage(
+                final dashboard = DashboardPage(
                   isDark: _themeMode == ThemeMode.dark,
                   onToggleTheme: _toggleTheme,
                   onLogout: _logout,
                   logoutEnabled: authenticated,
+                );
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    dashboard,
+                    if (_controller.isLoadingIdentity)
+                      const Scaffold(
+                        body: Center(child: CircularProgressIndicator()),
+                      ),
+                  ],
                 );
               },
             ),

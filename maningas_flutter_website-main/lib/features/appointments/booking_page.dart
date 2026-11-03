@@ -27,7 +27,7 @@ class BookingPage extends StatefulWidget {
   final bool focusMyAppointments;
 
   @override
-  State<BookingPage> createState() => _BookingPageState();
+   State<BookingPage> createState() => _BookingPageState();
 }
 
 class _BookingPageState extends State<BookingPage> {
@@ -255,6 +255,8 @@ class _BookingPageState extends State<BookingPage> {
                   onRetry: null,
                 ),
               if (_actionMessage != null) const SizedBox(height: 18),
+              _buildMyAppointmentsButton(),
+              const SizedBox(height: 18),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final calendar = _CalendarCard(
@@ -302,84 +304,6 @@ class _BookingPageState extends State<BookingPage> {
                   );
                 },
               ),
-              const SizedBox(height: 18),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final details = Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'My appointments',
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${_appointments.length} appointment'
-                              '${_appointments.length == 1 ? '' : 's'} · '
-                              'requests and previous visits',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .extension<PatientPortalTextColors>()!
-                                        .secondary,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      );
-                      final action = FilledButton.icon(
-                        key: const ValueKey('view-my-appointments'),
-                        onPressed: _showMyAppointments,
-                        icon: const Icon(Icons.calendar_month_outlined),
-                        label: const Text('View appointments'),
-                      );
-                      if (constraints.maxWidth < 520) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              'My appointments',
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${_appointments.length} appointment'
-                              '${_appointments.length == 1 ? '' : 's'} · '
-                              'requests and previous visits',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .extension<PatientPortalTextColors>()!
-                                        .secondary,
-                                  ),
-                            ),
-                            const SizedBox(height: 12),
-                            action,
-                          ],
-                        );
-                      }
-                      return Row(
-                        children: [
-                          const Icon(
-                            Icons.view_list_outlined,
-                            color: Color(0xFF2563EB),
-                          ),
-                          const SizedBox(width: 14),
-                          details,
-                          const SizedBox(width: 12),
-                          action,
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
             ],
           ),
         ),
@@ -393,6 +317,71 @@ class _BookingPageState extends State<BookingPage> {
   bool get _isAtMaximumMonth =>
       _visibleMonth.year == _maxDate.year &&
       _visibleMonth.month == _maxDate.month;
+
+  Widget _buildMyAppointmentsButton() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final appointmentCount = _appointments.length;
+            final summary = '$appointmentCount appointment'
+                '${appointmentCount == 1 ? '' : 's'} · '
+                'requests and previous visits';
+            final title = Text(
+              'My appointments',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            );
+            final subtitle = Text(
+              summary,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).extension<PatientPortalTextColors>()!.secondary,
+              ),
+            );
+            final action = FilledButton.icon(
+              key: const ValueKey('view-my-appointments'),
+              onPressed: _showMyAppointments,
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: const Text('View appointments'),
+            );
+            if (constraints.maxWidth < 520) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  title,
+                  const SizedBox(height: 4),
+                  subtitle,
+                  const SizedBox(height: 12),
+                  action,
+                ],
+              );
+            }
+            return Row(
+              children: [
+                const Icon(
+                  Icons.view_list_outlined,
+                  color: Color(0xFF2563EB),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [title, const SizedBox(height: 4), subtitle],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                action,
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   Future<void> _showMyAppointments() {
     final size = MediaQuery.sizeOf(context);

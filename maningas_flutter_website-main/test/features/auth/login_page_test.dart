@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:patient_portal_flutter/app/app.dart';
@@ -79,6 +81,61 @@ void main() {
 
     expect(find.byType(DashboardPage), findsOneWidget);
   });
+
+  testWidgets('keeps the profile open while patient identity refreshes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final identityValidation = Completer<PatientSession>();
+    final authRepository = _FakeAuthRepository(
+      identityValidation: identityValidation,
+    );
+    await tester.pumpWidget(_app(authRepository));
+
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Email Address')),
+      'patient@example.com',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Password')),
+      'correct-password',
+    );
+    tester
+        .widget<FilledButton>(find.byKey(const ValueKey('login-submit')))
+        .onPressed!();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    tester
+        .widget<InkWell>(find.widgetWithText(InkWell, 'My Profile').first)
+        .onTap!();
+    await tester.pump();
+    await tester.pump();
+    expect(identityValidation.isCompleted, isFalse);
+
+    identityValidation.complete(
+      PatientSession(
+        patientId: 'patient-1',
+        name: 'Test Patient',
+        email: 'patient@example.com',
+        token: 'test-token',
+        rememberMe: false,
+        status: 'Active',
+        emailVerified: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('View your personal information and clinic account details.'),
+      findsOneWidget,
+    );
+    expect(find.byType(DashboardPage), findsOneWidget);
+  });
 }
 
 Widget _app(_FakeAuthRepository authRepository) {
@@ -99,9 +156,10 @@ Widget _app(_FakeAuthRepository authRepository) {
 }
 
 class _FakeAuthRepository implements PatientAuthRepository {
-  _FakeAuthRepository({this.rejectLogin = false});
+  _FakeAuthRepository({this.rejectLogin = false, this.identityValidation});
 
   final bool rejectLogin;
+  final Completer<PatientSession>? identityValidation;
 
   @override
   Future<PatientAuthResult> login({
@@ -128,13 +186,17 @@ class _FakeAuthRepository implements PatientAuthRepository {
   }
 
   @override
-  Future<PatientSession> validateSession(String token) async => PatientSession(
-    patientId: 'patient-1',
-    name: 'Test Patient',
-    email: 'patient@example.com',
-    token: token,
-    rememberMe: false,
-  );
+  Future<PatientSession> validateSession(String token) =>
+      identityValidation?.future ??
+      Future.value(
+        PatientSession(
+          patientId: 'patient-1',
+          name: 'Test Patient',
+          email: 'patient@example.com',
+          token: token,
+          rememberMe: false,
+        ),
+      );
 
   @override
   Future<PatientRegistrationResult> register(
