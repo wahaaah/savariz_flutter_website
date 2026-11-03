@@ -9,6 +9,7 @@ class MyAppointmentsSection extends StatefulWidget {
     required this.now,
     this.onCancel,
     this.isCancelling = false,
+    this.onClose,
     super.key,
   });
 
@@ -16,6 +17,7 @@ class MyAppointmentsSection extends StatefulWidget {
   final DateTime now;
   final ValueChanged<AppointmentHistoryRecord>? onCancel;
   final bool isCancelling;
+  final VoidCallback? onClose;
 
   @override
   State<MyAppointmentsSection> createState() => _MyAppointmentsSectionState();
@@ -26,22 +28,14 @@ class _MyAppointmentsSectionState extends State<MyAppointmentsSection> {
   int _page = 1;
 
   List<_GroupedAppointment> get _pageAppointments {
-    final upcoming =
-        widget.appointments
-            .where((appointment) {
-              final scheduledAt = appointment.scheduledAt;
-              return scheduledAt != null && !scheduledAt.isBefore(widget.now);
-            })
-            .toList()
-          ..sort(_compareBookingRecency);
-    final past =
-        widget.appointments
-            .where((appointment) {
-              final scheduledAt = appointment.scheduledAt;
-              return scheduledAt != null && scheduledAt.isBefore(widget.now);
-            })
-            .toList()
-          ..sort(_compareBookingRecency);
+    final upcoming = widget.appointments.where((appointment) {
+      final scheduledAt = appointment.scheduledAt;
+      return scheduledAt != null && !scheduledAt.isBefore(widget.now);
+    }).toList()..sort(_compareBookingRecency);
+    final past = widget.appointments.where((appointment) {
+      final scheduledAt = appointment.scheduledAt;
+      return scheduledAt != null && scheduledAt.isBefore(widget.now);
+    }).toList()..sort(_compareBookingRecency);
     final grouped = [
       ...upcoming.map(
         (appointment) => _GroupedAppointment(
@@ -148,7 +142,15 @@ class _MyAppointmentsSectionState extends State<MyAppointmentsSection> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 10),
+                if (widget.onClose != null) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    key: const ValueKey('close-my-appointments'),
+                    tooltip: 'Close appointments',
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
               ],
             ),
           ),
@@ -376,7 +378,6 @@ class _AppointmentRow extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _DateTile extends StatelessWidget {
@@ -405,7 +406,9 @@ class _DateTile extends StatelessWidget {
                 Text(
                   _monthAbbreviation(date!.month),
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.extension<PatientPortalTextColors>()!.secondary,
+                    color: theme
+                        .extension<PatientPortalTextColors>()!
+                        .secondary,
                     fontSize: 8,
                     fontWeight: FontWeight.w800,
                     letterSpacing: .4,

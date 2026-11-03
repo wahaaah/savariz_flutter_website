@@ -31,7 +31,7 @@ class BookingPage extends StatefulWidget {
 }
 
 class _BookingPageState extends State<BookingPage> {
-  final _myAppointmentsKey = GlobalKey();
+  final _appointmentsVersion = ValueNotifier<int>(0);
 
   DateTime get _now => widget.now ?? DateTime.now();
   DateTime get _today => DateTime(_now.year, _now.month, _now.day);
@@ -65,14 +65,7 @@ class _BookingPageState extends State<BookingPage> {
     super.initState();
     if (widget.focusMyAppointments) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final sectionContext = _myAppointmentsKey.currentContext;
-        if (!mounted || sectionContext == null) return;
-        Scrollable.ensureVisible(
-          sectionContext,
-          alignment: 0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
+        if (mounted) _showMyAppointments();
       });
     }
   }
@@ -98,6 +91,7 @@ class _BookingPageState extends State<BookingPage> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _appointmentsVersion.dispose();
     _loadGeneration++;
     _controller?.removeListener(_handleSessionChange);
     super.dispose();
@@ -136,6 +130,7 @@ class _BookingPageState extends State<BookingPage> {
               ? 'Appointment services are not connected.'
               : 'Please sign in again to view appointment availability.';
         });
+        _appointmentsVersion.value++;
       }
       return;
     }
@@ -186,6 +181,7 @@ class _BookingPageState extends State<BookingPage> {
           _selectedTime = null;
         }
       });
+      _appointmentsVersion.value++;
     } on ApiFailure catch (failure) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
@@ -307,12 +303,82 @@ class _BookingPageState extends State<BookingPage> {
                 },
               ),
               const SizedBox(height: 18),
-              MyAppointmentsSection(
-                key: _myAppointmentsKey,
-                appointments: _appointments,
-                now: _now,
-                onCancel: _cancelAppointment,
-                isCancelling: _isCancelling,
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final details = Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'My appointments',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_appointments.length} appointment'
+                              '${_appointments.length == 1 ? '' : 's'} · '
+                              'requests and previous visits',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .extension<PatientPortalTextColors>()!
+                                        .secondary,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      );
+                      final action = FilledButton.icon(
+                        key: const ValueKey('view-my-appointments'),
+                        onPressed: _showMyAppointments,
+                        icon: const Icon(Icons.calendar_month_outlined),
+                        label: const Text('View appointments'),
+                      );
+                      if (constraints.maxWidth < 520) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'My appointments',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${_appointments.length} appointment'
+                              '${_appointments.length == 1 ? '' : 's'} · '
+                              'requests and previous visits',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .extension<PatientPortalTextColors>()!
+                                        .secondary,
+                                  ),
+                            ),
+                            const SizedBox(height: 12),
+                            action,
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          const Icon(
+                            Icons.view_list_outlined,
+                            color: Color(0xFF2563EB),
+                          ),
+                          const SizedBox(width: 14),
+                          details,
+                          const SizedBox(width: 12),
+                          action,
+                        ],
+                      );
+                    },
+                  ),
+                ),
               ),
             ],
           ),
@@ -327,6 +393,66 @@ class _BookingPageState extends State<BookingPage> {
   bool get _isAtMaximumMonth =>
       _visibleMonth.year == _maxDate.year &&
       _visibleMonth.month == _maxDate.month;
+
+  Future<void> _showMyAppointments() {
+    final size = MediaQuery.sizeOf(context);
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: size.width <= 600 ? 12 : 40,
+            vertical: 24,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 850,
+              maxHeight: size.height * .88,
+            ),
+            child: ValueListenableBuilder<int>(
+              valueListenable: _appointmentsVersion,
+              builder: (context, _, _) => SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_actionMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: _BookingStatusNotice(
+                          message: _actionMessage!,
+                          isError: _actionIsError,
+                          isLoading: false,
+                          onRetry: null,
+                        ),
+                      ),
+                    MyAppointmentsSection(
+                      appointments: _appointments,
+                      now: _now,
+                      onCancel: (appointment) {
+                        unawaited(
+                          _cancelAppointment(
+                            appointment,
+                            onChanged: () {
+                              if (dialogContext.mounted) {
+                                setDialogState(() {});
+                              }
+                            },
+                          ),
+                        );
+                      },
+                      isCancelling: _isCancelling,
+                      onClose: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   void _changeMonth(int offset) {
     setState(() {
@@ -462,7 +588,10 @@ class _BookingPageState extends State<BookingPage> {
     }
   }
 
-  Future<void> _cancelAppointment(AppointmentHistoryRecord appointment) async {
+  Future<void> _cancelAppointment(
+    AppointmentHistoryRecord appointment, {
+    VoidCallback? onChanged,
+  }) async {
     final id = appointment.id;
     final session = _controller?.currentSession;
     final repository = _repository;
@@ -501,6 +630,7 @@ class _BookingPageState extends State<BookingPage> {
       _isCancelling = true;
       _actionMessage = null;
     });
+    onChanged?.call();
     try {
       final message = await repository.cancelAppointment(
         patientId: session.patientId,
@@ -530,7 +660,10 @@ class _BookingPageState extends State<BookingPage> {
         isError: true,
       );
     } finally {
-      if (mounted) setState(() => _isCancelling = false);
+      if (mounted) {
+        setState(() => _isCancelling = false);
+        onChanged?.call();
+      }
     }
   }
 
