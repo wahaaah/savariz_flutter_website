@@ -1162,7 +1162,6 @@ class _DetailsCard extends StatelessWidget {
                       value: 'Contact Lens',
                       child: Text('Contact Lens'),
                     ),
-                    DropdownMenuItem(value: 'Other', child: Text('Other')),
                   ],
                   onChanged: onPurposeChanged,
                 ),
@@ -1193,6 +1192,59 @@ class _DetailsCard extends StatelessWidget {
                             color: secondary,
                             height: 1.45,
                           ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: theme.brightness == Brightness.dark
+                        ? const Color(0xFF2A2116)
+                        : const Color(0xFFFFFBEB),
+                    border: Border.all(
+                      color: theme.brightness == Brightness.dark
+                          ? const Color(0xFF57431F)
+                          : const Color(0xFFFDE68A),
+                    ),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Appointment Terms & Conditions',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '1. Select an available date from today through the '
+                        'next 12 months. Past dates, Sundays, and clinic '
+                        'closure dates cannot be booked.\n'
+                        '2. Choose an available time slot. Slots are offered '
+                        'in 30-minute intervals from 8:00 AM to 5:30 PM. '
+                        'Availability can change; if a slot is taken before '
+                        'your request is submitted, select another available '
+                        'time.\n'
+                        '3. Choose the purpose that best matches your visit: '
+                        'Eye Examination, Follow-up, Frame / Eyewear, Contact '
+                        'Lens. Review the selected date, time, and purpose '
+                        'before submitting.\n'
+                        '4. Submitting creates an appointment request, not a '
+                        'confirmed appointment. The clinic must approve the '
+                        'request before it is confirmed.\n'
+                        '5. You can cancel an eligible upcoming appointment '
+                        'from My Appointments. Cancellation cannot be undone. '
+                        'To request a different time, cancel the existing '
+                        'appointment if eligible, then submit a new request '
+                        'for an available slot.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: secondary,
+                          height: 1.45,
                         ),
                       ),
                     ],
