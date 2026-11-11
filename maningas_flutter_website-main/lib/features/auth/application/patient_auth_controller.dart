@@ -17,6 +17,7 @@ class PatientAuthController extends ChangeNotifier {
   final PatientSessionStore sessionStore;
   final VoidCallback? onDispose;
   Future<PatientAuthResult>? _pendingLogin;
+  final Map<String, DateTime> _loginLockouts = {};
   bool _isLoading = false;
   Future<PatientRegistrationResult>? _pendingRegistration;
   Future<EmailVerificationResult>? _pendingVerification;
@@ -194,6 +195,28 @@ class PatientAuthController extends ChangeNotifier {
     required String password,
     required bool rememberMe,
   }) {
+    final normalizedEmail = email.trim().toLowerCase();
+    final lockoutUntil = _loginLockouts[normalizedEmail];
+    if (lockoutUntil != null) {
+      if (DateTime.now().isBefore(lockoutUntil)) {
+        final retryAfterSeconds = lockoutUntil
+            .difference(DateTime.now())
+            .inSeconds
+            .clamp(1, 900);
+        return Future.error(
+          ApiFailure(
+            kind: ApiFailureKind.http,
+            statusCode: 429,
+            code: 'LOGIN_TOO_MANY_ATTEMPTS',
+            retryAfterSeconds: retryAfterSeconds,
+            message:
+                'Too many login attempts. Please try again in $retryAfterSeconds seconds.',
+          ),
+        );
+      }
+      _loginLockouts.remove(normalizedEmail);
+    }
+
     final pending = _pendingLogin;
     if (pending != null) return pending;
     _isLoading = true;
@@ -216,13 +239,27 @@ class PatientAuthController extends ChangeNotifier {
     required String password,
     required bool rememberMe,
   }) async {
-    final result = await repository.login(
-      email: email,
-      password: password,
-      rememberMe: rememberMe,
-    );
+    late final PatientAuthResult result;
+    try {
+      result = await repository.login(
+        email: email,
+        password: password,
+        rememberMe: rememberMe,
+      );
+    } on ApiFailure catch (failure) {
+      if (failure.code == 'LOGIN_TOO_MANY_ATTEMPTS') {
+        final retryAfterSeconds = (failure.retryAfterSeconds ?? 900)
+            .clamp(1, 900)
+            .toInt();
+        _loginLockouts[email.trim().toLowerCase()] = DateTime.now().add(
+          Duration(seconds: retryAfterSeconds),
+        );
+      }
+      rethrow;
+    }
     final session = result.session;
     if (session == null) return result;
+    _loginLockouts.remove(email.trim().toLowerCase());
     _authGeneration++;
     _pendingIdentityLoad = null;
     _isLoadingIdentity = false;

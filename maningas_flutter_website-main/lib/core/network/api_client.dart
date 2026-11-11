@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -67,7 +66,7 @@ class ApiClient {
     required String fileField,
     required String fileName,
     required String fileMimeType,
-    required Uint8List fileBytes,
+    required List<int> fileBytes,
     Map<String, String> headers = const {},
   }) async {
     return _sendJson(() async {
@@ -175,6 +174,9 @@ class ApiClient {
         kind: ApiFailureKind.http,
         statusCode: response.statusCode,
         code: decoded['code'] is String ? decoded['code'] as String : null,
+        retryAfterSeconds: decoded['retry_after_seconds'] is num
+            ? (decoded['retry_after_seconds'] as num).toInt()
+            : null,
         message:
             response.statusCode < 500 &&
                 message is String &&
@@ -199,7 +201,6 @@ class ApiClient {
   String _httpErrorMessage(int statusCode) => switch (statusCode) {
     401 => 'Invalid email or password.',
     403 => 'This account cannot sign in. Contact the clinic for assistance.',
-    429 => 'Too many attempts. Please wait before trying again.',
     >= 500 => 'The clinic service is temporarily unavailable.',
     _ => 'The request could not be completed.',
   };

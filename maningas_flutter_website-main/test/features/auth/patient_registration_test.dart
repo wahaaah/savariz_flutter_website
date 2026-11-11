@@ -31,4 +31,12 @@ void main() {
     expect(isValidPatientZipCode('30190'), isFalse);
     expect(isValidPatientZipCode('30A9'), isFalse);
   });
+
+  test('accepts Philippine mobile numbers with +63 or 09 prefixes', () {
+    expect(isValidPhilippineMobileNumber('+639171234567'), isTrue);
+    expect(isValidPhilippineMobileNumber('+63 917-123-4567'), isTrue);
+    expect(isValidPhilippineMobileNumber('09171234567'), isTrue);
+    expect(isValidPhilippineMobileNumber('9171234567'), isFalse);
+    expect(isValidPhilippineMobileNumber('+63281234567'), isFalse);
+  });
 }

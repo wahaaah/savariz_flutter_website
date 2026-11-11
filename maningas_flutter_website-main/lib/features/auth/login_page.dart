@@ -95,9 +95,15 @@ class _LoginPageState extends State<LoginPage> {
     } on ApiFailure catch (failure) {
       if (!mounted) return;
       setState(() {
+        if (failure.statusCode == 401) {
+          _passwordController.clear();
+        }
         _feedbackMessage = failure.message;
         _feedbackIsError = true;
       });
+      if (failure.statusCode == 401) {
+        _passwordFocusNode.requestFocus();
+      }
     }
   }
 

@@ -259,9 +259,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
     }
     requiredText('contact', 'your contact number');
     final contact = _value('contact').trim();
-    if (contact.isNotEmpty &&
-        !RegExp(r'^(\+63|0)9\d{9}$')
-            .hasMatch(contact.replaceAll(RegExp(r'[\s-]'), ''))) {
+    if (contact.isNotEmpty && !isValidPhilippineMobileNumber(contact)) {
       errors['contact'] = 'Please enter a valid Philippine mobile number.';
     }
 
@@ -290,7 +288,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
     } else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
       errors['email'] = 'Please enter a valid email address.';
     } else if (!isAcceptedPatientEmail(email)) {
-      errors['email'] = 'Please use a Gmail address ending in @gmail.com.';
+      errors['email'] = 'Please enter a valid email address.';
     }
 
     final password = _value('password');
@@ -1167,8 +1165,8 @@ class _RegistrationFormPanel extends StatelessWidget {
         _textField(
           'contact',
           label: 'Contact Number *',
-          hint: '09XXXXXXXXX',
-          help: 'Example: 09171234567',
+          hint: '09XXXXXXXXX or +639XXXXXXXXX',
+          help: 'Example: 09171234567 or +639171234567',
           keyboardType: TextInputType.phone,
           autocomplete: 'tel',
           maxLength: 20,

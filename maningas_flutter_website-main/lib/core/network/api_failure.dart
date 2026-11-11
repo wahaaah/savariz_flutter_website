@@ -6,12 +6,14 @@ class ApiFailure implements Exception {
     required this.message,
     this.statusCode,
     this.code,
+    this.retryAfterSeconds,
   });
 
   final ApiFailureKind kind;
   final String message;
   final int? statusCode;
   final String? code;
+  final int? retryAfterSeconds;
 
   @override
   String toString() => message;
