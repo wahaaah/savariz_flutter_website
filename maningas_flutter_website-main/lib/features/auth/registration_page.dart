@@ -361,7 +361,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
           age: _age!,
           dateOfBirth: _value('dateOfBirth').trim(),
           gender: _gender ?? '',
-          contact: _value('contact').trim(),
+          contact: '+63${_value('contact').trim()}',
           email: _value('email').trim().toLowerCase(),
           password: _value('password'),
           addressUnit: _value('addressUnit').trim(),
@@ -854,6 +854,7 @@ class _RegistrationFormPanel extends StatelessWidget {
     TextInputType? keyboardType,
     String? autocomplete,
     int? maxLength,
+    String? prefixText,
     bool readOnly = false,
     bool obscure = false,
     Widget? suffix,
@@ -879,7 +880,11 @@ class _RegistrationFormPanel extends StatelessWidget {
           autofillHints: _autofillHint(autocomplete),
           onChanged: (value) => onInputChanged(id, value),
           style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14),
-          decoration: _decoration(hint, suffix: suffix),
+          decoration: _decoration(
+            hint,
+            prefixText: prefixText,
+            suffix: suffix,
+          ),
         ),
       ),
     );
@@ -1165,11 +1170,16 @@ class _RegistrationFormPanel extends StatelessWidget {
         _textField(
           'contact',
           label: 'Contact Number *',
-          hint: '09XXXXXXXXX or +639XXXXXXXXX',
-          help: 'Example: 09171234567 or +639171234567',
+          hint: '9XXXXXXXXX',
+          help: 'Enter the 10 digits after +63.',
           keyboardType: TextInputType.phone,
           autocomplete: 'tel',
-          maxLength: 20,
+          maxLength: 10,
+          prefixText: '+63',
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
+          ],
         ),
         const SizedBox(height: 18),
         const _RequiredGroupLabel('Address *'),
@@ -1684,10 +1694,20 @@ class _TermsDialog extends StatelessWidget {
   }
 }
 
-InputDecoration _decoration(String hint, {Widget? suffix}) => InputDecoration(
+InputDecoration _decoration(
+  String hint, {
+  String? prefixText,
+  Widget? suffix,
+}) => InputDecoration(
   hintText: hint,
   hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
   contentPadding: const EdgeInsets.symmetric(horizontal: 13),
+  prefixText: prefixText == null ? null : '$prefixText ',
+  prefixStyle: const TextStyle(
+    color: Color(0xFF0F172A),
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+  ),
   counterText: '',
   suffixIcon: suffix,
   filled: true,

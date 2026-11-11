@@ -14,6 +14,5 @@ bool isValidPatientZipCode(String value) =>
     RegExp(r'^\d{4}$').hasMatch(value.trim());
 
 bool isValidPhilippineMobileNumber(String value) {
-  final normalized = value.replaceAll(RegExp(r'[\s-]'), '');
-  return RegExp(r'^(?:\+63|0)9\d{9}$').hasMatch(normalized);
+  return RegExp(r'^9\d{9}$').hasMatch(value.trim());
 }

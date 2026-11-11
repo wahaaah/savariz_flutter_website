@@ -32,11 +32,11 @@ void main() {
     expect(isValidPatientZipCode('30A9'), isFalse);
   });
 
-  test('accepts Philippine mobile numbers with +63 or 09 prefixes', () {
-    expect(isValidPhilippineMobileNumber('+639171234567'), isTrue);
-    expect(isValidPhilippineMobileNumber('+63 917-123-4567'), isTrue);
-    expect(isValidPhilippineMobileNumber('09171234567'), isTrue);
-    expect(isValidPhilippineMobileNumber('9171234567'), isFalse);
-    expect(isValidPhilippineMobileNumber('+63281234567'), isFalse);
+  test('accepts exactly 10 Philippine mobile digits after the +63 prefix', () {
+    expect(isValidPhilippineMobileNumber('9171234567'), isTrue);
+    expect(isValidPhilippineMobileNumber('917123456'), isFalse);
+    expect(isValidPhilippineMobileNumber('91712345678'), isFalse);
+    expect(isValidPhilippineMobileNumber('0171234567'), isFalse);
+    expect(isValidPhilippineMobileNumber('+639171234567'), isFalse);
   });
 }
