@@ -84,6 +84,37 @@ void main() {
     },
   );
 
+  test('surfaces the login-attempt limit response from the API', () async {
+    final repository = PatientAuthApiRepository(
+      ApiClient(
+        client: MockClient((_) async {
+          return http.Response(
+            jsonEncode({'error': 'Too many attempts. Try again later.'}),
+            429,
+          );
+        }),
+        baseUri: Uri.parse('https://api.example.test'),
+      ),
+    );
+
+    await expectLater(
+      repository.login(
+        email: 'patient@example.com',
+        password: 'patient-password',
+        rememberMe: false,
+      ),
+      throwsA(
+        isA<ApiFailure>()
+            .having((failure) => failure.statusCode, 'statusCode', 429)
+            .having(
+              (failure) => failure.message,
+              'message',
+              'Too many attempts. Try again later.',
+            ),
+      ),
+    );
+  });
+
   test('continues to accept top-level patient details', () async {
     final repository = PatientAuthApiRepository(
       ApiClient(

@@ -4,12 +4,18 @@ class SupportMessage {
     required this.senderName,
     required this.sentAt,
     required this.isMine,
+    this.attachmentUrl,
+    this.attachmentName,
+    this.attachmentMimeType,
   });
 
   final String body;
   final String senderName;
   final DateTime? sentAt;
   final bool isMine;
+  final String? attachmentUrl;
+  final String? attachmentName;
+  final String? attachmentMimeType;
 
   factory SupportMessage.fromJson(
     Map<String, dynamic> json, {
@@ -26,12 +32,11 @@ class SupportMessage {
       senderName:
           _stringValue(json, const ['sender_name', 'senderName']) ??
           (isMine ? 'You' : 'Clinic Support'),
-      sentAt: _dateValue(json, const [
-        'created_at',
-        'createdAt',
-        'sent_at',
-      ]),
+      sentAt: _dateValue(json, const ['created_at', 'createdAt', 'sent_at']),
       isMine: isMine,
+      attachmentUrl: _stringValue(json, const ['attachment_url']),
+      attachmentName: _stringValue(json, const ['attachment_name']),
+      attachmentMimeType: _stringValue(json, const ['attachment_mime_type']),
     );
   }
 }
@@ -77,21 +82,23 @@ class SupportTicket {
       throw const FormatException('Support ticket is missing its ID.');
     }
     final status = _stringValue(json, const ['status']) ?? 'Open';
-    final resolution = (_stringValue(json, const [
-      'resolution',
-      'resolution_note',
-      'cancellation_reason',
-      'close_reason',
-    ]) ?? '').trim().toLowerCase();
+    final resolution =
+        (_stringValue(json, const [
+                  'resolution',
+                  'resolution_note',
+                  'cancellation_reason',
+                  'close_reason',
+                ]) ??
+                '')
+            .trim()
+            .toLowerCase();
     final rawMessages = json['messages'];
     final messages = rawMessages is List<Object?>
         ? rawMessages
               .whereType<Map<String, dynamic>>()
               .map(
-                (message) => SupportMessage.fromJson(
-                  message,
-                  patientId: patientId,
-                ),
+                (message) =>
+                    SupportMessage.fromJson(message, patientId: patientId),
               )
               .toList(growable: false)
         : const <SupportMessage>[];

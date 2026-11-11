@@ -61,6 +61,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   let threeLoader = null;
 
   let frameModel = null;
+  let hasFrameTarget = false;
+  let targetFramePosition = new THREE.Vector3();
+  let targetFrameRoll = 0;
+  let targetFrameScale = 1;
+  let lastFrameRenderTimestamp = 0;
 
   /*
    * Base normalized scale of the current GLTF.
@@ -693,6 +698,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  function videoPointToViewport(point, videoWidth, videoHeight) {
+    const viewportWidth = Math.max(modalContainer.clientWidth, 1);
+    const viewportHeight = Math.max(modalContainer.clientHeight, 1);
+    const viewportAspect = viewportWidth / viewportHeight;
+    const videoAspect = videoWidth / videoHeight;
+    let x = point.x / videoWidth;
+    let y = point.y / videoHeight;
+
+    if (videoAspect > viewportAspect) {
+      const visibleWidthRatio = viewportAspect / videoAspect;
+      x = (x - (1 - visibleWidthRatio) / 2) / visibleWidthRatio;
+    } else {
+      const visibleHeightRatio = videoAspect / viewportAspect;
+      y = (y - (1 - visibleHeightRatio) / 2) / visibleHeightRatio;
+    }
+
+    return {
+      x: (1 - x) * viewportWidth,
+      y: y * viewportHeight,
+    };
+  }
+
+  function viewportPointToWorld(point, worldZ) {
+    const viewportWidth = Math.max(modalContainer.clientWidth, 1);
+    const viewportHeight = Math.max(modalContainer.clientHeight, 1);
+    const vector = new THREE.Vector3(
+      (point.x / viewportWidth) * 2 - 1,
+      -(point.y / viewportHeight) * 2 + 1,
+      0.5,
+    ).unproject(threeCamera);
+    const direction = vector.sub(threeCamera.position).normalize();
+    const distance = (worldZ - threeCamera.position.z) / direction.z;
+
+    return threeCamera.position.clone().add(direction.multiplyScalar(distance));
+  }
+
   window.addEventListener("resize", resizeThreeRenderer);
 
   /* =========================================================
@@ -706,15 +747,35 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     animationStarted = true;
 
-    function renderLoop() {
+    function renderLoop(timestamp) {
       requestAnimationFrame(renderLoop);
+
+      if (frameModel?.visible && hasFrameTarget) {
+        const elapsed = lastFrameRenderTimestamp
+          ? Math.min(timestamp - lastFrameRenderTimestamp, 50)
+          : 16.7;
+        const smoothing = 1 - Math.exp(-elapsed / 35);
+        frameModel.position.lerp(targetFramePosition, smoothing);
+
+        const rollDifference = Math.atan2(
+          Math.sin(targetFrameRoll - frameModel.rotation.z),
+          Math.cos(targetFrameRoll - frameModel.rotation.z),
+        );
+        frameModel.rotation.z += rollDifference * smoothing;
+        frameModel.scale.setScalar(
+          frameModel.scale.x +
+            (targetFrameScale - frameModel.scale.x) * smoothing,
+        );
+      }
+
+      lastFrameRenderTimestamp = timestamp;
 
       if (threeRenderer && threeScene && threeCamera) {
         threeRenderer.render(threeScene, threeCamera);
       }
     }
 
-    renderLoop();
+    requestAnimationFrame(renderLoop);
   }
 
   /* =========================================================
@@ -722,6 +783,8 @@ document.addEventListener("DOMContentLoaded", async () => {
      ========================================================= */
 
   function removeCurrentModel() {
+    hasFrameTarget = false;
+
     if (!frameModel || !threeScene) {
       frameModel = null;
 
@@ -1048,6 +1111,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           removeCurrentModel();
 
           frameModel = gltf.scene;
+          hasFrameTarget = false;
 
           frameModel.scale.set(1, 1, 1);
 
@@ -1182,6 +1246,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (!detection) {
         frameModel.visible = false;
+        hasFrameTarget = false;
 
         setVTOStatus("🔴 No face detected");
 
@@ -1198,6 +1263,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (!leftEye || !rightEye || !leftEye.length || !rightEye.length) {
         frameModel.visible = false;
+        hasFrameTarget = false;
 
         setVTOStatus("🔴 Eyes not detected");
 
@@ -1214,6 +1280,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (!leftCenter || !rightCenter) {
         frameModel.visible = false;
+        hasFrameTarget = false;
 
         return;
       }
@@ -1230,41 +1297,24 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const eyeCenterY = (leftCenter.y + rightCenter.y) / 2;
 
-      /* =====================================================
-         NORMALIZE POSITION
-         ===================================================== */
-
-      const normalizedX = eyeCenterX / videoWidth;
-
-      const normalizedY = eyeCenterY / videoHeight;
-
-      /*
-       * Because the camera image is mirrored,
-       * mirror the horizontal coordinate too.
-       */
-
-      const mirroredX = 1 - normalizedX;
-
-      /* =====================================================
-         THREE.JS POSITION
-         ===================================================== */
-
-      const worldX = (mirroredX - 0.5) * 4.5;
-
-      const worldY = -(normalizedY - 0.5) * 3.4;
-
-      /*
-       * IMPORTANT:
-       *
-       * No artificial -0.45 offset.
-       *
-       * The glasses are placed directly on the
-       * midpoint between the detected eyes.
-       */
-
       const worldZ = 1;
+      const leftEyeViewport = videoPointToViewport(
+        leftCenter,
+        videoWidth,
+        videoHeight,
+      );
+      const rightEyeViewport = videoPointToViewport(
+        rightCenter,
+        videoWidth,
+        videoHeight,
+      );
+      const eyeCenterViewport = {
+        x: (leftEyeViewport.x + rightEyeViewport.x) / 2,
+        y: (leftEyeViewport.y + rightEyeViewport.y) / 2,
+      };
+      const eyeCenterWorld = viewportPointToWorld(eyeCenterViewport, worldZ);
 
-      frameModel.position.set(worldX, worldY, worldZ);
+      targetFramePosition.copy(eyeCenterWorld);
 
       /* =====================================================
          HEAD TILT
@@ -1276,7 +1326,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const angle = Math.atan2(deltaY, deltaX);
 
-      frameModel.rotation.z = angle;
+      targetFrameRoll = angle;
 
       /* =====================================================
          EYE DISTANCE
@@ -1289,6 +1339,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (!Number.isFinite(eyeDistance) || eyeDistance <= 0) {
         frameModel.visible = false;
+        hasFrameTarget = false;
 
         return;
       }
@@ -1297,22 +1348,24 @@ document.addEventListener("DOMContentLoaded", async () => {
          FRAME SIZE
          ===================================================== */
 
-      const faceWidthRatio = eyeDistance / videoWidth;
-
-      /*
-       * Main frame-size control.
-       *
-       * 2.8 gives a natural glasses width.
-       *
-       * If you later want:
-       *
-       * slightly smaller = 2.5
-       * current            = 2.8
-       * slightly larger = 3.0
-       * large = 3.2
-       */
-
-      const desiredWorldWidth = faceWidthRatio * 4.5 * 2.8;
+      const viewportWidth = Math.max(modalContainer.clientWidth, 1);
+      const eyeLandmarkXs = [...leftEye, ...rightEye].map(
+        (point) =>
+          videoPointToViewport(point, videoWidth, videoHeight).x,
+      );
+      const eyeSpan = Math.max(...eyeLandmarkXs) - Math.min(...eyeLandmarkXs);
+      const modelDepth = threeCamera.position.z - worldZ;
+      const visibleWorldWidth =
+        2 *
+        modelDepth *
+        Math.tan(THREE.MathUtils.degToRad(threeCamera.fov / 2)) *
+        threeCamera.aspect;
+      const isMobileLayout = window.matchMedia(
+        "(max-width: 768px), (pointer: coarse)",
+      ).matches;
+      const frameWidthRatio = isMobileLayout ? 1.08 : 1.8;
+      const desiredWorldWidth =
+        visibleWorldWidth * (eyeSpan / viewportWidth) * frameWidthRatio;
 
       /* =====================================================
          MODEL WIDTH
@@ -1354,7 +1407,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       const finalModelScale = frameModelNormalizedScale * finalScale;
 
       if (Number.isFinite(finalModelScale) && finalModelScale > 0) {
-        frameModel.scale.set(finalModelScale, finalModelScale, finalModelScale);
+        targetFrameScale = finalModelScale;
+      }
+
+      if (!hasFrameTarget) {
+        frameModel.position.copy(targetFramePosition);
+        frameModel.rotation.z = targetFrameRoll;
+        frameModel.scale.setScalar(targetFrameScale);
+        hasFrameTarget = true;
       }
 
       /* =====================================================
@@ -1372,6 +1432,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (frameModel) {
         frameModel.visible = false;
       }
+      hasFrameTarget = false;
 
       setVTOStatus("Face detection error");
     } finally {
@@ -1394,7 +1455,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    detectionTimer = setTimeout(detectionLoop, 100);
+    detectionTimer = setTimeout(detectionLoop, 50);
   }
 
   /* =========================================================

@@ -10,6 +10,7 @@ import 'application/patient_auth_controller.dart';
 import 'application/patient_auth_scope.dart';
 import 'application/patient_auth_setup.dart';
 import 'domain/patient_registration.dart';
+import 'domain/patient_registration_validation.dart';
 import 'login_page.dart';
 import 'verify_email_page.dart';
 
@@ -216,13 +217,23 @@ class _RegistrationPageState extends State<RegistrationPage> {
       }
     }
 
-    requiredText('firstName', 'your first name', minLength: 2);
-    final middleName = _value('middleName').trim();
-    if (middleName.isNotEmpty && middleName.length < 2) {
-      errors['middleName'] =
-          'Please enter a valid middle name or leave it blank.';
+    void validateName(String id, String label, {required bool isRequired}) {
+      final name = _value(id).trim();
+      if (isRequired && name.isEmpty) {
+        errors[id] = 'Please enter $label.';
+      } else if (name.isNotEmpty &&
+          (name.length < 2 || !isValidPatientName(name))) {
+        errors[id] =
+            'Use letters, spaces, apostrophes, periods, or hyphens for $label.';
+      }
     }
-    requiredText('lastName', 'your last name', minLength: 2);
+
+    validateName('firstName', 'your first name', isRequired: true);
+    final middleName = _value('middleName').trim();
+    if (middleName.isNotEmpty) {
+      validateName('middleName', 'your middle name', isRequired: false);
+    }
+    validateName('lastName', 'your last name', isRequired: true);
 
     final dobValue = _value('dateOfBirth').trim();
     final dob = _parseIsoDate(dobValue);
@@ -269,7 +280,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
     }
     requiredText('addressZipCode', 'your ZIP code');
     final zip = _value('addressZipCode').trim();
-    if (zip.isNotEmpty && !RegExp(r'^\d{4}$').hasMatch(zip)) {
+    if (zip.isNotEmpty && !isValidPatientZipCode(zip)) {
       errors['addressZipCode'] = 'ZIP code must be exactly 4 digits.';
     }
 
@@ -278,6 +289,8 @@ class _RegistrationPageState extends State<RegistrationPage> {
       errors['email'] = 'Please enter your email address.';
     } else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
       errors['email'] = 'Please enter a valid email address.';
+    } else if (!isAcceptedPatientEmail(email)) {
+      errors['email'] = 'Please use a Gmail address ending in @gmail.com.';
     }
 
     final password = _value('password');
@@ -735,6 +748,11 @@ class _BrandFeature extends StatelessWidget {
 }
 
 class _RegistrationFormPanel extends StatelessWidget {
+  static final _nameInputFormatter = TextInputFormatter.withFunction(
+    (oldValue, newValue) =>
+        isValidPatientNameInput(newValue.text) ? newValue : oldValue,
+  );
+
   const _RegistrationFormPanel({
     required this.tablet,
     required this.phone,
@@ -1086,6 +1104,7 @@ class _RegistrationFormPanel extends StatelessWidget {
             hint: 'First name',
             autocomplete: 'given-name',
             maxLength: 50,
+            inputFormatters: [_nameInputFormatter],
           ),
           _textField(
             'middleName',
@@ -1093,6 +1112,7 @@ class _RegistrationFormPanel extends StatelessWidget {
             hint: 'Middle name',
             autocomplete: 'additional-name',
             maxLength: 50,
+            inputFormatters: [_nameInputFormatter],
           ),
         ]),
         const SizedBox(height: 18),
@@ -1102,6 +1122,7 @@ class _RegistrationFormPanel extends StatelessWidget {
           hint: 'Last name',
           autocomplete: 'family-name',
           maxLength: 50,
+          inputFormatters: [_nameInputFormatter],
         ),
         const SizedBox(height: 18),
         _row([
@@ -1211,7 +1232,7 @@ class _RegistrationFormPanel extends StatelessWidget {
             hint: 'e.g. 3019',
             help: 'Enter your ZIP code.',
             keyboardType: TextInputType.number,
-            maxLength: 10,
+            maxLength: 4,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
         ]),

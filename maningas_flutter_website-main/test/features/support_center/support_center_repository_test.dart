@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:patient_portal_flutter/core/network/api_client.dart';
 import 'package:patient_portal_flutter/features/support_center/support_center_repository.dart';
+import 'package:patient_portal_flutter/features/support_center/support_image_attachment.dart';
 
 void main() {
   test(
@@ -50,6 +52,9 @@ void main() {
                       'content': 'How can we help?',
                       'sender_type': 'admin',
                       'sender_name': 'Clinic Support',
+                      'attachment_url': 'https://cdn.example.test/support.png',
+                      'attachment_name': 'support.png',
+                      'attachment_mime_type': 'image/png',
                       'created_at': '2026-10-28T01:02:00Z',
                     },
                   ],
@@ -102,6 +107,12 @@ void main() {
       expect(messages.first.isMine, isTrue);
       expect(messages.first.senderName, 'You');
       expect(messages.last.isMine, isFalse);
+      expect(
+        messages.last.attachmentUrl,
+        'https://cdn.example.test/support.png',
+      );
+      expect(messages.last.attachmentName, 'support.png');
+      expect(messages.last.attachmentMimeType, 'image/png');
 
       final created = await repository.createTicket(
         patientId: 'patient-7',
@@ -162,5 +173,43 @@ void main() {
       ticketId: 'case/9',
     );
     expect(messages, isEmpty);
+  });
+
+  test('sends an image and optional message as multipart form data', () async {
+    final repository = ApiSupportCenterRepository(
+      ApiClient(
+        client: MockClient((request) async {
+          expect(
+            request.headers.keys.map((key) => key.toLowerCase()),
+            contains('authorization'),
+          );
+          expect(
+            request.headers['content-type'],
+            startsWith('multipart/form-data; boundary='),
+          );
+          expect(request.body, contains('name="message"'));
+          expect(request.body, contains('Look at this screenshot'));
+          expect(
+            request.body,
+            contains('name="image"; filename="screenshot.png"'),
+          );
+          expect(request.body, contains('content-type: image/png'));
+          expect(request.body, contains('abc'));
+          return http.Response(jsonEncode({'success': true}), 201);
+        }),
+        baseUri: Uri.parse('https://api.example.test'),
+      ),
+    );
+
+    await repository.sendMessage(
+      token: 'test-token',
+      ticketId: '42',
+      message: 'Look at this screenshot',
+      attachment: SupportImageAttachment(
+        bytes: Uint8List.fromList([97, 98, 99]),
+        fileName: 'screenshot.png',
+        mimeType: 'image/png',
+      ),
+    );
   });
 }

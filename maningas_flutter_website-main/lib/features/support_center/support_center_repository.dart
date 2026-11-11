@@ -1,5 +1,6 @@
 import '../../core/network/api_client.dart';
 import '../../core/network/api_failure.dart';
+import 'support_image_attachment.dart';
 import 'support_ticket.dart';
 
 abstract interface class SupportCenterRepository {
@@ -29,6 +30,7 @@ abstract interface class SupportCenterRepository {
     required String token,
     required String ticketId,
     required String message,
+    SupportImageAttachment? attachment,
   });
 
   Future<void> markMessagesRead({
@@ -126,12 +128,24 @@ class ApiSupportCenterRepository implements SupportCenterRepository {
     required String token,
     required String ticketId,
     required String message,
+    SupportImageAttachment? attachment,
   }) async {
-    final response = await _apiClient.postJson(
-      '$_basePath/tickets/${Uri.encodeComponent(ticketId)}/messages',
-      headers: _headers(token),
-      body: {'message': message},
-    );
+    final path = '$_basePath/tickets/${Uri.encodeComponent(ticketId)}/messages';
+    final response = attachment == null
+        ? await _apiClient.postJson(
+            path,
+            headers: _headers(token),
+            body: {'message': message},
+          )
+        : await _apiClient.postMultipart(
+            path,
+            headers: _headers(token),
+            fields: {'message': message},
+            fileField: 'image',
+            fileName: attachment.fileName,
+            fileMimeType: attachment.mimeType,
+            fileBytes: attachment.bytes,
+          );
     _ensureSuccessfulResponse(response);
   }
 

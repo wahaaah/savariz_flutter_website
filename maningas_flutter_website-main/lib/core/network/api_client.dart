@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import 'api_failure.dart';
 
@@ -57,6 +59,32 @@ class ApiClient {
         body: jsonEncode(body),
       ),
     ).then((decoded) => decoded as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required Map<String, String> fields,
+    required String fileField,
+    required String fileName,
+    required String fileMimeType,
+    required Uint8List fileBytes,
+    Map<String, String> headers = const {},
+  }) async {
+    return _sendJson(() async {
+      final request = http.MultipartRequest('POST', baseUri.resolve(path))
+        ..headers.addAll({'Accept': 'application/json', ...headers})
+        ..fields.addAll(fields)
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            fileField,
+            fileBytes,
+            filename: fileName,
+            contentType: MediaType.parse(fileMimeType),
+          ),
+        );
+      final streamedResponse = await client.send(request);
+      return http.Response.fromStream(streamedResponse);
+    }).then((decoded) => decoded as Map<String, dynamic>);
   }
 
   Future<Map<String, dynamic>> patchJson(
@@ -171,6 +199,7 @@ class ApiClient {
   String _httpErrorMessage(int statusCode) => switch (statusCode) {
     401 => 'Invalid email or password.',
     403 => 'This account cannot sign in. Contact the clinic for assistance.',
+    429 => 'Too many attempts. Please wait before trying again.',
     >= 500 => 'The clinic service is temporarily unavailable.',
     _ => 'The request could not be completed.',
   };

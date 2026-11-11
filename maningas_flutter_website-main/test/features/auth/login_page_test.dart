@@ -19,6 +19,7 @@ import 'package:patient_portal_flutter/features/profile/patient_profile_reposito
 import 'package:patient_portal_flutter/features/shell/notification_repository.dart';
 import 'package:patient_portal_flutter/features/shell/patient_notification.dart';
 import 'package:patient_portal_flutter/features/support_center/support_center_repository.dart';
+import 'package:patient_portal_flutter/features/support_center/support_image_attachment.dart';
 import 'package:patient_portal_flutter/features/support_center/support_ticket.dart';
 import 'package:patient_portal_flutter/features/transaction_history/transaction_history_repository.dart';
 import 'package:patient_portal_flutter/features/transaction_history/transaction_record.dart';
@@ -55,6 +56,114 @@ void main() {
     expect(passwordField.controller!.text, isEmpty);
     expect(find.text('Invalid email or password.'), findsOneWidget);
     expect(find.byKey(const ValueKey('login-submit')), findsOneWidget);
+  });
+
+  testWidgets('shows the server login-attempt limit without freezing fields', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final authRepository = _FakeAuthRepository(
+      loginFailure: const ApiFailure(
+        kind: ApiFailureKind.http,
+        statusCode: 429,
+        message: 'Too many attempts. Please wait before trying again.',
+      ),
+    );
+    await tester.pumpWidget(_app(authRepository));
+
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Email Address')),
+      'patient@example.com',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Password')),
+      'correct-password',
+    );
+    tester
+        .widget<FilledButton>(find.byKey(const ValueKey('login-submit')))
+        .onPressed!();
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.text('Too many attempts. Please wait before trying again.'),
+      findsOneWidget,
+    );
+    final emailField = tester.widget<TextField>(
+      find.byKey(const ValueKey('login-Email Address')),
+    );
+    expect(emailField.enabled ?? true, isTrue);
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Email Address')),
+      'updated@example.com',
+    );
+    expect(emailField.controller!.text, 'updated@example.com');
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const ValueKey('login-submit')))
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('ignores repeated submit taps while keeping inputs editable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final loginResult = Completer<PatientAuthResult>();
+    final authRepository = _FakeAuthRepository(loginResult: loginResult);
+    await tester.pumpWidget(_app(authRepository));
+
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Email Address')),
+      'patient@example.com',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Password')),
+      'correct-password',
+    );
+    final submit = tester
+        .widget<FilledButton>(find.byKey(const ValueKey('login-submit')))
+        .onPressed!;
+    submit();
+    submit();
+    await tester.pump();
+
+    expect(authRepository.loginCalls, 1);
+    final emailField = tester.widget<TextField>(
+      find.byKey(const ValueKey('login-Email Address')),
+    );
+    expect(emailField.enabled ?? true, isTrue);
+    await tester.enterText(
+      find.byKey(const ValueKey('login-Email Address')),
+      'updated@example.com',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('login-Email Address')))
+          .controller!
+          .text,
+      'updated@example.com',
+    );
+
+    loginResult.complete(
+      PatientAuthResult.api(
+        PatientSession(
+          patientId: 'patient-1',
+          name: 'Test Patient',
+          email: 'patient@example.com',
+          token: 'test-token',
+          rememberMe: false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
   });
 
   testWidgets('shows the dashboard after successful sign-in', (tester) async {
@@ -156,10 +265,18 @@ Widget _app(_FakeAuthRepository authRepository) {
 }
 
 class _FakeAuthRepository implements PatientAuthRepository {
-  _FakeAuthRepository({this.rejectLogin = false, this.identityValidation});
+  _FakeAuthRepository({
+    this.rejectLogin = false,
+    this.loginFailure,
+    this.loginResult,
+    this.identityValidation,
+  });
 
   final bool rejectLogin;
+  final ApiFailure? loginFailure;
+  final Completer<PatientAuthResult>? loginResult;
   final Completer<PatientSession>? identityValidation;
+  int loginCalls = 0;
 
   @override
   Future<PatientAuthResult> login({
@@ -167,12 +284,16 @@ class _FakeAuthRepository implements PatientAuthRepository {
     required String password,
     required bool rememberMe,
   }) async {
-    if (rejectLogin) {
-      throw const ApiFailure(
-        kind: ApiFailureKind.http,
-        statusCode: 401,
-        message: 'Invalid email or password.',
-      );
+    loginCalls++;
+    final pendingResult = loginResult;
+    if (pendingResult != null) return pendingResult.future;
+    if (loginFailure != null || rejectLogin) {
+      throw loginFailure ??
+          const ApiFailure(
+            kind: ApiFailureKind.http,
+            statusCode: 401,
+            message: 'Invalid email or password.',
+          );
     }
     return PatientAuthResult.api(
       PatientSession(
@@ -338,6 +459,7 @@ class _FakeSupportCenterRepository implements SupportCenterRepository {
     required String token,
     required String ticketId,
     required String message,
+    SupportImageAttachment? attachment,
   }) async {}
 
   @override

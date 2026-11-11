@@ -67,17 +67,15 @@ class _FramesCatalogPageState extends State<FramesCatalogPage> {
       return matchesQuery && matchesCategory && matchesAvailability;
     }).toList();
 
-    if (_sort != 'newest') {
-      frames.sort((a, b) {
-        return switch (_sort) {
-          'name-asc' => a.name.compareTo(b.name),
-          'name-desc' => b.name.compareTo(a.name),
-          'price-low' => a.price.compareTo(b.price),
-          'price-high' => b.price.compareTo(a.price),
-          _ => b.frameId.compareTo(a.frameId),
-        };
-      });
-    }
+    frames.sort((a, b) {
+      return switch (_sort) {
+        'name-asc' => a.name.compareTo(b.name),
+        'name-desc' => b.name.compareTo(a.name),
+        'price-low' => a.price.compareTo(b.price),
+        'price-high' => b.price.compareTo(a.price),
+        _ => b.frameId.compareTo(a.frameId),
+      };
+    });
     return frames;
   }
 
