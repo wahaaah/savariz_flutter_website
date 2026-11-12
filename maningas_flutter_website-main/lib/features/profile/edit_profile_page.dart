@@ -572,7 +572,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               readOnly: true,
                               hint: 'Calculated from date of birth',
                             ),
-                            _textField('gender', 'Gender *'),
+                            _genderDropdown(),
                           ], stackedFields),
                         ],
                       ),
@@ -902,7 +902,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,
-          prefixText: id == 'contact' ? '+63 ' : null,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 13,
@@ -914,6 +913,50 @@ class _EditProfilePageState extends State<EditProfilePage> {
               (option) => DropdownMenuItem<String>(
                 value: option.id,
                 child: Text(option.name, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _genderDropdown() {
+    final currentGender = _value('gender');
+    final options = <String>['Male', 'Female', 'Other'];
+    if (currentGender.isNotEmpty &&
+        !options.any(
+          (option) => option.toLowerCase() == currentGender.toLowerCase(),
+        )) {
+      options.add(currentGender);
+    }
+    final selectedValue = options.firstWhere(
+      (option) => option.toLowerCase() == currentGender.toLowerCase(),
+      orElse: () => '',
+    );
+
+    return _LabeledField(
+      label: 'Gender *',
+      child: DropdownButtonFormField<String>(
+        key: const ValueKey('edit-profile-gender'),
+        initialValue: selectedValue.isEmpty ? null : selectedValue,
+        isExpanded: true,
+        validator: (_) => _validateText('gender'),
+        onChanged: (value) {
+          if (value == null) return;
+          _controllers['gender']!.text = value;
+          _onChanged('gender', value);
+        },
+        style: const TextStyle(fontSize: 14),
+        decoration: const InputDecoration(
+          hintText: 'Select your gender',
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 13, vertical: 14),
+        ),
+        items: options
+            .map(
+              (option) => DropdownMenuItem<String>(
+                value: option,
+                child: Text(option, overflow: TextOverflow.ellipsis),
               ),
             )
             .toList(),
@@ -946,6 +989,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,
+          prefixText: id == 'contact' ? '+63 ' : null,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 13,
