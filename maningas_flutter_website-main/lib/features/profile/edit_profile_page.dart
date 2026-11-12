@@ -189,7 +189,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _controllers['dateOfBirth']!.text = details.dateOfBirth ?? '';
     _controllers['age']!.text =
         _calculateAge(details.dateOfBirth ?? '')?.toString() ?? '';
-    _controllers['contact']!.text = details.contactNumber ?? '';
+    _controllers['contact']!.text = _normalizeContactForEditing(
+      details.contactNumber,
+    );
     _controllers['addressUnit']!.text = details.addressUnit ?? '';
     _controllers['addressStreet']!.text = details.street ?? '';
     _controllers['addressBarangay']!.text = details.barangay ?? '';
@@ -338,6 +340,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
     return date;
   }
 
+  String _normalizeContactForEditing(String? contact) {
+    final digits = (contact ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('63') && digits.length == 12) {
+      return digits.substring(2);
+    }
+    if (digits.startsWith('0') && digits.length == 11) {
+      return digits.substring(1);
+    }
+    return digits;
+  }
+
   String? _validateText(String id) {
     final value = _value(id);
     switch (id) {
@@ -363,9 +376,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
         return null;
       case 'contact':
         if (value.isEmpty) return 'Please enter your contact number.';
-        if (!RegExp(r'^(\+63|0)9\d{9}$')
-            .hasMatch(value.replaceAll(RegExp(r'[\s-]'), ''))) {
-          return 'Please enter a valid Philippine mobile number.';
+        if (!RegExp(r'^9\d{9}$').hasMatch(value)) {
+          return 'Enter a valid 10-digit Philippine mobile number starting with 9.';
         }
         return null;
       case 'addressUnit':
@@ -575,8 +587,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         _textField(
                           'contact',
                           'Contact Number *',
-                          hint: '09XXXXXXXXX',
+                          hint: '9XXXXXXXXX',
                           keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
                         ),
                       ], stackedFields),
                     ),
@@ -886,6 +902,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,
+          prefixText: id == 'contact' ? '+63 ' : null,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 13,
