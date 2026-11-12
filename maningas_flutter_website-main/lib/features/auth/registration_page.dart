@@ -259,7 +259,9 @@ class _RegistrationPageState extends State<RegistrationPage> {
     }
     requiredText('contact', 'your contact number');
     final contact = _value('contact').trim();
-    if (contact.isNotEmpty && !isValidPhilippineMobileNumber(contact)) {
+    if (contact.isNotEmpty &&
+        !RegExp(r'^(\+63|0)9\d{9}$')
+            .hasMatch(contact.replaceAll(RegExp(r'[\s-]'), ''))) {
       errors['contact'] = 'Please enter a valid Philippine mobile number.';
     }
 
@@ -288,7 +290,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
     } else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
       errors['email'] = 'Please enter a valid email address.';
     } else if (!isAcceptedPatientEmail(email)) {
-      errors['email'] = 'Please enter a valid email address.';
+      errors['email'] = 'Please use a Gmail address ending in @gmail.com.';
     }
 
     final password = _value('password');
@@ -361,7 +363,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
           age: _age!,
           dateOfBirth: _value('dateOfBirth').trim(),
           gender: _gender ?? '',
-          contact: '+63${_value('contact').trim()}',
+          contact: _value('contact').trim(),
           email: _value('email').trim().toLowerCase(),
           password: _value('password'),
           addressUnit: _value('addressUnit').trim(),
@@ -369,8 +371,8 @@ class _RegistrationPageState extends State<RegistrationPage> {
           addressBarangay: _addressCatalog!.barangayById(_barangay)!.name,
           addressCityMunicipality: _addressCatalog!
               .municipalityByCode(_city)!
-              .code!,
-          addressProvince: _addressCatalog!.provinceByCode(_province)!.code!,
+              .name,
+          addressProvince: _addressCatalog!.provinceByCode(_province)!.name,
           addressZipCode: _value('addressZipCode').trim(),
         ),
       );
@@ -854,7 +856,6 @@ class _RegistrationFormPanel extends StatelessWidget {
     TextInputType? keyboardType,
     String? autocomplete,
     int? maxLength,
-    String? prefixText,
     bool readOnly = false,
     bool obscure = false,
     Widget? suffix,
@@ -880,11 +881,7 @@ class _RegistrationFormPanel extends StatelessWidget {
           autofillHints: _autofillHint(autocomplete),
           onChanged: (value) => onInputChanged(id, value),
           style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14),
-          decoration: _decoration(
-            hint,
-            prefixText: prefixText,
-            suffix: suffix,
-          ),
+          decoration: _decoration(hint, suffix: suffix),
         ),
       ),
     );
@@ -1170,16 +1167,11 @@ class _RegistrationFormPanel extends StatelessWidget {
         _textField(
           'contact',
           label: 'Contact Number *',
-          hint: '9XXXXXXXXX',
-          help: 'Enter the 10 digits after +63.',
+          hint: '09XXXXXXXXX',
+          help: 'Example: 09171234567',
           keyboardType: TextInputType.phone,
           autocomplete: 'tel',
-          maxLength: 10,
-          prefixText: '+63',
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            LengthLimitingTextInputFormatter(10),
-          ],
+          maxLength: 20,
         ),
         const SizedBox(height: 18),
         const _RequiredGroupLabel('Address *'),
@@ -1583,8 +1575,9 @@ class _TermsDialog extends StatelessWidget {
   static const _terms = [
     (
       '1. Patient Account',
-      'By creating a patient account, you confirm that the information you '
-          'provide is accurate and belongs to you.',
+      'You must provide accurate information and use an email address you '
+          'control. Do not create an account for another person unless you are '
+          'their parent, legal guardian, or authorized representative.',
     ),
     (
       '2. Email Verification',
@@ -1592,27 +1585,68 @@ class _TermsDialog extends StatelessWidget {
           'used. A verification code will be sent to the email address you provide.',
     ),
     (
-      '3. Personal Information',
-      'The information submitted during registration may be used by Gonzales '
-          'Vision Clinic to identify your patient record and provide clinic services.',
+      '3. Personal Data and How It Is Used',
+      'Gonzales Vision Clinic may process the information you submit, including '
+          'your identifying, contact, appointment, and patient information, to '
+          'verify your account, locate or maintain your clinic record, provide '
+          'the Patient Portal and clinic services, and contact you about your '
+          'account or appointments. Access should be limited to authorized '
+          'clinic personnel and service providers who need it for these purposes, '
+          'and information may be disclosed when required by law.',
     ),
     (
       '4. Account Security',
-      'You are responsible for keeping your password confidential. Do not share '
-          'your account credentials with other people.',
+      'Keep your password and verification codes private, sign out when using a '
+          'shared device, and contact the clinic through its official channels '
+          'if you believe someone accessed your account without permission.',
     ),
     (
       '5. Accurate Information',
       'You agree to provide accurate and updated information when using the '
-          'Patient Portal.',
+          'Patient Portal. Contact the clinic if your information is incorrect '
+          'or you need help correcting your patient record.',
     ),
     (
-      '6. Clinic Services',
-      'Patient Portal features may include appointment management, patient '
-          'information, and other clinic services made available by Gonzales Vision Clinic.',
+      '6. Minors and Authorized Representatives',
+      'A parent, legal guardian, or other person with proper authority should '
+          'create or manage an account on behalf of a minor or someone unable '
+          'to manage their own account, and is responsible for providing '
+          'accurate information and having authority to act for that person.',
     ),
     (
-      '7. Acceptance',
+      '7. Portal Use and Service Availability',
+      'The Patient Portal may provide appointment management, patient '
+          'information, and other features offered by the clinic. Features may '
+          'change or be temporarily unavailable. The portal is not for '
+          'emergencies and does not replace an examination or professional '
+          'medical advice. For urgent concerns, contact emergency services or '
+          'the clinic directly.',
+    ),
+    (
+      '8. Appointment Attendance',
+      'When you book an appointment, make sure you can attend on the selected '
+          'date and time. Arrive before your scheduled appointment time to '
+          'allow time for check-in. If you cannot attend, contact the clinic '
+          'as soon as possible to cancel or reschedule.',
+    ),
+    (
+      '9. Data Retention and Privacy Requests',
+      'Information may be retained as needed to provide services and meet '
+          'applicable legal and recordkeeping obligations. You may contact the '
+          'clinic through its official channels to ask about your information '
+          'or request access or correction, subject to applicable law. Closing '
+          'an online account may not require the clinic to delete records it '
+          'must retain.',
+    ),
+    (
+      '10. Updates and Contact',
+      'These terms may be updated when the portal or clinic services change. '
+          'The version shown when you register applies to your acceptance. '
+          'For questions or privacy concerns, contact Gonzales Vision Clinic '
+          'through its official channels.',
+    ),
+    (
+      '11. Acceptance',
       'By checking the Terms and Conditions box and creating your account, you '
           'acknowledge that you have read and agreed to these terms.',
     ),
@@ -1694,20 +1728,10 @@ class _TermsDialog extends StatelessWidget {
   }
 }
 
-InputDecoration _decoration(
-  String hint, {
-  String? prefixText,
-  Widget? suffix,
-}) => InputDecoration(
+InputDecoration _decoration(String hint, {Widget? suffix}) => InputDecoration(
   hintText: hint,
   hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
   contentPadding: const EdgeInsets.symmetric(horizontal: 13),
-  prefixText: prefixText == null ? null : '$prefixText ',
-  prefixStyle: const TextStyle(
-    color: Color(0xFF0F172A),
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-  ),
   counterText: '',
   suffixIcon: suffix,
   filled: true,
