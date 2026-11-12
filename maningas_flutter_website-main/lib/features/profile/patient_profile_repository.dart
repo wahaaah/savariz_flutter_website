@@ -234,6 +234,7 @@ class PatientProfileUpdate {
     required this.cityMunicipality,
     required this.province,
     required this.zipCode,
+    this.legacyAddress,
   });
 
   final String firstName;
@@ -248,11 +249,14 @@ class PatientProfileUpdate {
   final String cityMunicipality;
   final String province;
   final String zipCode;
+  final String? legacyAddress;
 
   String get fullName =>
       [firstName, middleName, lastName].where((part) => part.isNotEmpty).join(' ');
 
-  String get address =>
+  String get address => legacyAddress?.trim().isNotEmpty == true
+      ? legacyAddress!.trim()
+      :
       [addressUnit, street, barangay, cityMunicipality, province, zipCode]
           .where((part) => part.isNotEmpty)
           .join(', ');
@@ -263,12 +267,14 @@ class PatientProfileUpdate {
     'gender': gender,
     'contact': contactNumber,
     'address': address,
-    'address_unit': addressUnit,
-    'address_street': street,
-    'address_barangay': barangay,
-    'address_city_municipality': cityMunicipality,
-    'address_province': province,
-    'address_zip_code': zipCode,
+    if (legacyAddress == null) ...{
+      'address_unit': addressUnit,
+      'address_street': street,
+      'address_barangay': barangay,
+      'address_city_municipality': cityMunicipality,
+      'address_province': province,
+      'address_zip_code': zipCode,
+    },
   };
 }
 

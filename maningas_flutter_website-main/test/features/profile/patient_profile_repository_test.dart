@@ -48,6 +48,27 @@ void main() {
     );
   });
 
+  test('preserves a legacy full-address value in profile updates', () {
+    const update = PatientProfileUpdate(
+      firstName: 'Juan',
+      middleName: '',
+      lastName: 'Dela Cruz',
+      dateOfBirth: '1995-04-12',
+      gender: 'Male',
+      contactNumber: '09171234567',
+      addressUnit: '',
+      street: '',
+      barangay: '',
+      cityMunicipality: '',
+      province: '',
+      zipCode: '',
+      legacyAddress: 'BLK 208 LT 27 ST ANNE DECA HOMES MARILAO BULACAN',
+    );
+
+    expect(update.toJson()['address'], update.legacyAddress);
+    expect(update.toJson().containsKey('address_unit'), isFalse);
+  });
+
   test('uses a formatted API address when components are not returned', () {
     final details = PatientProfileDetails.fromResponse({
       'patient': {
@@ -103,5 +124,26 @@ void main() {
 
     expect(details.addressUnit, 'Unit 4');
     expect(details.province, 'Example Province');
+  });
+
+  test('reads saved address columns from a patient database response', () {
+    final details = PatientProfileDetails.fromResponse({
+      'patient_id': 'GVC-1234',
+      'name': 'Juan Dela Cruz',
+      'address': 'Unit 4, Mabini Street, San Isidro, Example City',
+      'address_unit': 'Unit 4',
+      'address_street': 'Mabini Street',
+      'address_barangay': 'San Isidro',
+      'address_city_municipality': 'Example City',
+      'address_province': 'Example Province',
+      'address_zip_code': '3019',
+    });
+
+    expect(details.addressUnit, 'Unit 4');
+    expect(details.street, 'Mabini Street');
+    expect(details.barangay, 'San Isidro');
+    expect(details.cityMunicipality, 'Example City');
+    expect(details.province, 'Example Province');
+    expect(details.zipCode, '3019');
   });
 }

@@ -15,7 +15,13 @@ import 'patient_profile_repository.dart';
 class ProfilePage extends StatefulWidget {
   const ProfilePage({this.onEditProfile, super.key});
 
-  final void Function(PatientProfileDetails? details, String? name)?
+  final void Function(
+    PatientProfileDetails? details,
+    String? name,
+    PatientAuthController? controller,
+    PatientProfileRepository? repository,
+    PatientSession? session,
+  )?
   onEditProfile;
 
   @override
@@ -239,7 +245,13 @@ class _ProfilePageState extends State<ProfilePage> {
         _details?.fullName ?? _controller?.currentSession?.name;
     final onEditProfile = widget.onEditProfile;
     if (onEditProfile != null) {
-      onEditProfile(_details, currentName);
+      onEditProfile(
+        _details,
+        currentName,
+        _controller,
+        _profileRepository,
+        _controller?.currentSession,
+      );
       return;
     }
 

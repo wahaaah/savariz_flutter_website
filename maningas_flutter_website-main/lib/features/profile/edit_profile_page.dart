@@ -46,6 +46,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   String? _loadError;
   bool _isLoadingProfile = false;
   bool _isSavingProfile = false;
+  bool _legacyAddressOnly = false;
   bool _didLoadInitialDetails = false;
   int _loadGeneration = 0;
   String? _status;
@@ -196,6 +197,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
         details.cityMunicipality ?? '';
     _controllers['addressProvince']!.text = details.province ?? '';
     _controllers['addressZipCode']!.text = details.zipCode ?? '';
+    _legacyAddressOnly =
+        details.address != null &&
+        details.addressUnit == null &&
+        details.street == null &&
+        details.barangay == null &&
+        details.cityMunicipality == null &&
+        details.province == null &&
+        details.zipCode == null;
+    _controllers['legacyAddress']!.text = _legacyAddressOnly
+        ? details.address!
+        : '';
     _controllers['gender']!.text = details.gender ?? '';
     _syncAddressSelections();
   }
@@ -377,6 +389,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
           return 'ZIP code must be exactly 4 digits.';
         }
         return null;
+      case 'legacyAddress':
+        return _requiredText(value, 'Please enter your address.');
       default:
         return null;
     }
@@ -397,9 +411,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final repository = _profileRepository;
     final controller = widget.authController ?? _authController;
     final session = widget.session ?? controller?.currentSession ?? _session;
-    if (repository == null || session == null || controller == null) {
+    if (repository == null || session == null) {
       setState(() {
-        _status = 'Please sign in again before saving your profile.';
+        _status = session == null
+            ? 'Your patient session is unavailable. Please sign in again.'
+            : 'The profile service is unavailable. Please reload and try again.';
       });
       return;
     }
@@ -417,6 +433,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       cityMunicipality: _value('addressCityMunicipality'),
       province: _value('addressProvince'),
       zipCode: _value('addressZipCode'),
+      legacyAddress: _legacyAddressOnly ? _value('legacyAddress') : null,
     );
 
     setState(() {
@@ -430,7 +447,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         update: update,
       );
       if (!mounted) return;
-      controller.updateCurrentSessionName(update.fullName);
+      controller?.updateCurrentSessionName(update.fullName);
       final onSaved = widget.onSaved;
       if (onSaved != null) {
         onSaved();
@@ -571,7 +588,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       description:
                           'Your residential address from your clinic account.',
                       icon: Icons.location_on_outlined,
-                      child: Column(
+                      child: _legacyAddressOnly
+                          ? _textField(
+                              'legacyAddress',
+                              'Address *',
+                              hint: 'Enter your complete address',
+                              maxLines: 3,
+                            )
+                          : Column(
                         children: [
                           _fieldRow([
                             _textField(
@@ -868,6 +892,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     String id,
     String label, {
     String? hint,
+    int maxLines = 1,
     TextInputType? keyboardType,
     bool readOnly = false,
     VoidCallback? onTap,
@@ -879,6 +904,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         key: ValueKey('edit-profile-$id'),
         controller: _controllers[id],
         readOnly: readOnly,
+        maxLines: maxLines,
         keyboardType: keyboardType,
         onTap: onTap,
         inputFormatters: inputFormatters,
@@ -1111,6 +1137,7 @@ const _fields = <_FieldDefinition>[
   _FieldDefinition('addressCityMunicipality'),
   _FieldDefinition('addressProvince'),
   _FieldDefinition('addressZipCode'),
+  _FieldDefinition('legacyAddress'),
 ];
 
 class _FieldDefinition {

@@ -51,6 +51,9 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _isEditingProfile = false;
   PatientProfileDetails? _editingProfileDetails;
   String? _editingProfileName;
+  PatientAuthController? _editingProfileController;
+  PatientProfileRepository? _editingProfileRepository;
+  PatientSession? _editingProfileSession;
 
   void _selectDestination(PortalDestination destination) {
     setState(() {
@@ -63,12 +66,18 @@ class _DashboardPageState extends State<DashboardPage> {
   void _editProfile(
     PatientProfileDetails? details,
     String? name,
+    PatientAuthController? controller,
+    PatientProfileRepository? profileRepository,
+    PatientSession? session,
   ) {
     setState(() {
       _selectedDestination = PortalDestination.profile;
       _isEditingProfile = true;
       _editingProfileDetails = details;
       _editingProfileName = name;
+      _editingProfileController = controller;
+      _editingProfileRepository = profileRepository;
+      _editingProfileSession = session;
     });
   }
 
@@ -77,6 +86,9 @@ class _DashboardPageState extends State<DashboardPage> {
       _isEditingProfile = false;
       _editingProfileDetails = null;
       _editingProfileName = null;
+      _editingProfileController = null;
+      _editingProfileRepository = null;
+      _editingProfileSession = null;
     });
     if (saved) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -144,10 +156,27 @@ class _DashboardPageState extends State<DashboardPage> {
             ? EditProfilePage(
                 initialDetails: _editingProfileDetails,
                 initialName: _editingProfileName,
+                authController: _editingProfileController,
+                profileRepository: _editingProfileRepository,
+                session: _editingProfileSession,
                 onSaved: () => _finishProfileEdit(saved: true),
                 onCancel: () => _finishProfileEdit(saved: false),
               )
-            : ProfilePage(onEditProfile: _editProfile),
+            : ProfilePage(
+                onEditProfile: (
+                  details,
+                  name,
+                  authController,
+                  profileRepository,
+                  patientSession,
+                ) => _editProfile(
+                  details,
+                  name,
+                  authController,
+                  profileRepository,
+                  patientSession,
+                ),
+              ),
       },
     );
   }
