@@ -7,15 +7,30 @@ import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
 import '../auth/application/patient_auth_scope.dart';
+import '../auth/application/patient_auth_controller.dart';
 import '../auth/data/philippine_address_catalog.dart';
 import '../auth/domain/patient_session.dart';
 import 'patient_profile_repository.dart';
 
 class EditProfilePage extends StatefulWidget {
-  const EditProfilePage({this.initialDetails, this.initialName, super.key});
+  const EditProfilePage({
+    this.initialDetails,
+    this.initialName,
+    this.authController,
+    this.profileRepository,
+    this.session,
+    this.onSaved,
+    this.onCancel,
+    super.key,
+  });
 
   final PatientProfileDetails? initialDetails;
   final String? initialName;
+  final PatientAuthController? authController;
+  final PatientProfileRepository? profileRepository;
+  final PatientSession? session;
+  final VoidCallback? onSaved;
+  final VoidCallback? onCancel;
 
   @override
   State<EditProfilePage> createState() => _EditProfilePageState();
@@ -27,6 +42,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   PatientProfileRepository? _profileRepository;
   PatientSession? _session;
+  PatientAuthController? _authController;
   String? _loadError;
   bool _isLoadingProfile = false;
   bool _isSavingProfile = false;
@@ -50,7 +66,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final initialDetails = widget.initialDetails;
     if (initialDetails != null) {
       _applyDetails(initialDetails);
-      _didLoadInitialDetails = true;
     }
     unawaited(_loadAddressCatalog());
   }
@@ -58,8 +73,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _profileRepository = PatientAuthScope.patientProfileOf(context);
-    _session = PatientAuthScope.maybeOf(context)?.currentSession;
+    _authController =
+        widget.authController ?? PatientAuthScope.maybeOf(context);
+    _profileRepository =
+        widget.profileRepository ?? PatientAuthScope.patientProfileOf(context);
+    _session = widget.session ?? _authController?.currentSession;
     if (!_didLoadInitialDetails) _loadPatientDetails();
   }
 
@@ -377,8 +395,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
     if (_isSavingProfile || !_formKey.currentState!.validate()) return;
 
     final repository = _profileRepository;
-    final session = _session;
-    final controller = PatientAuthScope.maybeOf(context);
+    final controller = widget.authController ?? _authController;
+    final session = widget.session ?? controller?.currentSession ?? _session;
     if (repository == null || session == null || controller == null) {
       setState(() {
         _status = 'Please sign in again before saving your profile.';
@@ -413,7 +431,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
       );
       if (!mounted) return;
       controller.updateCurrentSessionName(update.fullName);
-      Navigator.of(context).pop(true);
+      final onSaved = widget.onSaved;
+      if (onSaved != null) {
+        onSaved();
+      } else {
+        Navigator.of(context).pop(true);
+      }
     } on ApiFailure catch (failure) {
       if (!mounted) return;
       setState(() => _status = failure.message);
@@ -423,6 +446,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   void _cancel() {
+    final onCancel = widget.onCancel;
+    if (onCancel != null) {
+      onCancel();
+      return;
+    }
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
       return;
@@ -686,7 +714,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         final vertical = buttonConstraints.maxWidth < 430;
                         final save = FilledButton.icon(
                           key: const ValueKey('edit-profile-save'),
-                          onPressed: _isSavingProfile ? null : _saveProfile,
+                          onPressed:
+                              _isSavingProfile ||
+                                  _isLoadingProfile ||
+                                  _loadError != null
+                              ? null
+                              : _saveProfile,
                           icon: _isSavingProfile
                               ? const SizedBox(
                                   width: 18,

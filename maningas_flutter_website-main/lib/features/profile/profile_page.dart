@@ -13,7 +13,10 @@ import 'edit_profile_page.dart';
 import 'patient_profile_repository.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  const ProfilePage({this.onEditProfile, super.key});
+
+  final void Function(PatientProfileDetails? details, String? name)?
+  onEditProfile;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -232,12 +235,22 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _openEditProfile() async {
+    final currentName =
+        _details?.fullName ?? _controller?.currentSession?.name;
+    final onEditProfile = widget.onEditProfile;
+    if (onEditProfile != null) {
+      onEditProfile(_details, currentName);
+      return;
+    }
+
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => EditProfilePage(
           initialDetails: _details,
-          initialName:
-              _details?.fullName ?? _controller?.currentSession?.name,
+          initialName: currentName,
+          authController: _controller,
+          profileRepository: _profileRepository,
+          session: _controller?.currentSession,
         ),
       ),
     );

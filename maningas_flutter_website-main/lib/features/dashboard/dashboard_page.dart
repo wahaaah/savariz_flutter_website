@@ -11,6 +11,7 @@ import '../appointment_history/appointment_history_record.dart';
 import '../appointments/booking_page.dart';
 import '../frames_catalog/frames_catalog_page.dart';
 import '../frames_catalog/try_on_page.dart';
+import '../profile/edit_profile_page.dart';
 import '../profile/patient_profile_repository.dart';
 import '../profile/profile_page.dart';
 import '../transaction_history/transaction_history_page.dart';
@@ -47,12 +48,41 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   PortalDestination _selectedDestination = PortalDestination.dashboard;
   bool _focusAppointmentsSection = false;
+  bool _isEditingProfile = false;
+  PatientProfileDetails? _editingProfileDetails;
+  String? _editingProfileName;
 
   void _selectDestination(PortalDestination destination) {
     setState(() {
       _selectedDestination = destination;
       _focusAppointmentsSection = false;
+      _isEditingProfile = false;
     });
+  }
+
+  void _editProfile(
+    PatientProfileDetails? details,
+    String? name,
+  ) {
+    setState(() {
+      _selectedDestination = PortalDestination.profile;
+      _isEditingProfile = true;
+      _editingProfileDetails = details;
+      _editingProfileName = name;
+    });
+  }
+
+  void _finishProfileEdit({required bool saved}) {
+    setState(() {
+      _isEditingProfile = false;
+      _editingProfileDetails = null;
+      _editingProfileName = null;
+    });
+    if (saved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile updated successfully.')),
+      );
+    }
   }
 
   void _openMyAppointments() {
@@ -110,7 +140,14 @@ class _DashboardPageState extends State<DashboardPage> {
           onOpenTryOn: _openTryOn,
         ),
         PortalDestination.supportCenter => const SupportCenterPage(),
-        PortalDestination.profile => const ProfilePage(),
+        PortalDestination.profile => _isEditingProfile
+            ? EditProfilePage(
+                initialDetails: _editingProfileDetails,
+                initialName: _editingProfileName,
+                onSaved: () => _finishProfileEdit(saved: true),
+                onCancel: () => _finishProfileEdit(saved: false),
+              )
+            : ProfilePage(onEditProfile: _editProfile),
       },
     );
   }
