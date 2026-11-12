@@ -344,9 +344,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       case 'firstName':
         return _requiredText(value, 'Please enter your first name.', 2);
       case 'middleName':
-        return value.isNotEmpty && value.length < 2
-            ? 'Enter at least 2 characters or leave this blank.'
-            : null;
+        return null;
       case 'lastName':
         return _requiredText(value, 'Please enter your last name.', 2);
       case 'gender':
@@ -596,137 +594,155 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               maxLines: 3,
                             )
                           : Column(
-                        children: [
-                          _fieldRow([
-                            _textField(
-                              'addressUnit',
-                              'House / Unit / Lot / Block *',
-                            ),
-                            _textField('addressStreet', 'Street *'),
-                          ], stackedFields),
-                          const SizedBox(height: 16),
-                          if (_isLoadingAddressData)
-                            const LinearProgressIndicator(
-                              key: ValueKey('edit-profile-address-loading'),
-                              minHeight: 3,
-                            ),
-                          if (_addressDataError != null)
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: TextButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _isLoadingAddressData = true;
-                                    _addressDataError = null;
-                                  });
-                                  unawaited(_loadAddressCatalog());
-                                },
-                                icon: const Icon(Icons.refresh, size: 16),
-                                label: const Text('Retry address choices'),
-                              ),
-                            ),
-                          _fieldRow([
-                            _addressDropdown(
-                              id: 'addressProvince',
-                              label: 'Province *',
-                              hint: 'Select Province',
-                              value: _provinceId,
-                              options: _addressCatalog?.provinces ?? const [],
-                              onChanged: (provinceId) {
-                                final option = _addressOption(
-                                  _addressCatalog?.provinces ?? const [],
-                                  provinceId,
-                                );
-                                setState(() {
-                                  _provinceId = provinceId;
-                                  _cityId = null;
-                                  _barangayId = null;
-                                  _controllers['addressProvince']!.text =
-                                      option?.name ?? '';
-                                  _controllers['addressCityMunicipality']!
-                                          .text =
-                                      '';
-                                  _controllers['addressBarangay']!.text = '';
-                                  _status = null;
-                                });
-                              },
-                            ),
-                            _addressDropdown(
-                              id: 'addressCityMunicipality',
-                              label: 'City / Municipality *',
-                              hint: _provinceId == null
-                                  ? 'Select Province First'
-                                  : 'Select City / Municipality',
-                              value: _cityId,
-                              options: _provinceId == null
-                                  ? const []
-                                  : _addressCatalog?.municipalitiesFor(
-                                          _provinceId!,
-                                        ) ??
-                                        const [],
-                              onChanged: (cityId) {
-                                final options = _provinceId == null
-                                    ? const <PhilippineAddressOption>[]
-                                    : _addressCatalog?.municipalitiesFor(
-                                            _provinceId!,
-                                          ) ??
-                                          const <PhilippineAddressOption>[];
-                                final option = _addressOption(options, cityId);
-                                setState(() {
-                                  _cityId = cityId;
-                                  _barangayId = null;
-                                  _controllers['addressCityMunicipality']!
-                                          .text =
-                                      option?.name ?? '';
-                                  _controllers['addressBarangay']!.text = '';
-                                  _status = null;
-                                });
-                              },
-                            ),
-                          ], stackedFields),
-                          const SizedBox(height: 16),
-                          _fieldRow([
-                            _addressDropdown(
-                              id: 'addressBarangay',
-                              label: 'Barangay *',
-                              hint: _cityId == null
-                                  ? 'Select City / Municipality First'
-                                  : 'Select Barangay',
-                              value: _barangayId,
-                              options: _cityId == null
-                                  ? const []
-                                  : _addressCatalog?.barangaysFor(_cityId!) ??
-                                        const [],
-                              onChanged: (barangayId) {
-                                final options = _cityId == null
-                                    ? const <PhilippineAddressOption>[]
-                                    : _addressCatalog?.barangaysFor(_cityId!) ??
-                                          const <PhilippineAddressOption>[];
-                                final option = _addressOption(
-                                  options,
-                                  barangayId,
-                                );
-                                setState(() {
-                                  _barangayId = barangayId;
-                                  _controllers['addressBarangay']!.text =
-                                      option?.name ?? '';
-                                  _status = null;
-                                });
-                              },
-                            ),
-                            _textField(
-                              'addressZipCode',
-                              'ZIP Code *',
-                              hint: 'e.g. 3019',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(4),
+                              children: [
+                                _fieldRow([
+                                  _textField(
+                                    'addressUnit',
+                                    'House / Unit / Lot / Block *',
+                                  ),
+                                  _textField('addressStreet', 'Street *'),
+                                ], stackedFields),
+                                const SizedBox(height: 16),
+                                if (_isLoadingAddressData)
+                                  const LinearProgressIndicator(
+                                    key: ValueKey(
+                                      'edit-profile-address-loading',
+                                    ),
+                                    minHeight: 3,
+                                  ),
+                                if (_addressDataError != null)
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TextButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _isLoadingAddressData = true;
+                                          _addressDataError = null;
+                                        });
+                                        unawaited(_loadAddressCatalog());
+                                      },
+                                      icon: const Icon(Icons.refresh, size: 16),
+                                      label: const Text(
+                                        'Retry address choices',
+                                      ),
+                                    ),
+                                  ),
+                                _fieldRow([
+                                  _addressDropdown(
+                                    id: 'addressProvince',
+                                    label: 'Province *',
+                                    hint: 'Select Province',
+                                    value: _provinceId,
+                                    options:
+                                        _addressCatalog?.provinces ?? const [],
+                                    onChanged: (provinceId) {
+                                      final option = _addressOption(
+                                        _addressCatalog?.provinces ?? const [],
+                                        provinceId,
+                                      );
+                                      setState(() {
+                                        _provinceId = provinceId;
+                                        _cityId = null;
+                                        _barangayId = null;
+                                        _controllers['addressProvince']!.text =
+                                            option?.name ?? '';
+                                        _controllers['addressCityMunicipality']!
+                                                .text =
+                                            '';
+                                        _controllers['addressBarangay']!.text =
+                                            '';
+                                        _status = null;
+                                      });
+                                    },
+                                  ),
+                                  _addressDropdown(
+                                    id: 'addressCityMunicipality',
+                                    label: 'City / Municipality *',
+                                    hint: _provinceId == null
+                                        ? 'Select Province First'
+                                        : 'Select City / Municipality',
+                                    value: _cityId,
+                                    options: _provinceId == null
+                                        ? const []
+                                        : _addressCatalog?.municipalitiesFor(
+                                                _provinceId!,
+                                              ) ??
+                                              const [],
+                                    onChanged: (cityId) {
+                                      final options = _provinceId == null
+                                          ? const <PhilippineAddressOption>[]
+                                          : _addressCatalog?.municipalitiesFor(
+                                                  _provinceId!,
+                                                ) ??
+                                                const <
+                                                  PhilippineAddressOption
+                                                >[];
+                                      final option = _addressOption(
+                                        options,
+                                        cityId,
+                                      );
+                                      setState(() {
+                                        _cityId = cityId;
+                                        _barangayId = null;
+                                        _controllers['addressCityMunicipality']!
+                                                .text =
+                                            option?.name ?? '';
+                                        _controllers['addressBarangay']!.text =
+                                            '';
+                                        _status = null;
+                                      });
+                                    },
+                                  ),
+                                ], stackedFields),
+                                const SizedBox(height: 16),
+                                _fieldRow([
+                                  _addressDropdown(
+                                    id: 'addressBarangay',
+                                    label: 'Barangay *',
+                                    hint: _cityId == null
+                                        ? 'Select City / Municipality First'
+                                        : 'Select Barangay',
+                                    value: _barangayId,
+                                    options: _cityId == null
+                                        ? const []
+                                        : _addressCatalog?.barangaysFor(
+                                                _cityId!,
+                                              ) ??
+                                              const [],
+                                    onChanged: (barangayId) {
+                                      final options = _cityId == null
+                                          ? const <PhilippineAddressOption>[]
+                                          : _addressCatalog?.barangaysFor(
+                                                  _cityId!,
+                                                ) ??
+                                                const <
+                                                  PhilippineAddressOption
+                                                >[];
+                                      final option = _addressOption(
+                                        options,
+                                        barangayId,
+                                      );
+                                      setState(() {
+                                        _barangayId = barangayId;
+                                        _controllers['addressBarangay']!.text =
+                                            option?.name ?? '';
+                                        _status = null;
+                                      });
+                                    },
+                                  ),
+                                  _textField(
+                                    'addressZipCode',
+                                    'ZIP Code *',
+                                    hint: 'e.g. 3019',
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(4),
+                                    ],
+                                  ),
+                                ], stackedFields),
                               ],
                             ),
-                          ], stackedFields),
-                        ],
-                      ),
                     ),
                     const SizedBox(height: 20),
                     if (_status != null) ...[

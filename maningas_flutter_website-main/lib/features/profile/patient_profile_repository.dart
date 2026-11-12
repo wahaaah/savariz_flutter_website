@@ -340,7 +340,7 @@ class ApiPatientProfileRepository implements PatientProfileRepository {
     final response = await _apiClient.putJson(
       '/api/patients/me/profile',
       body: update.toJson(),
-      headers: {'Authorization': '******'},
+      headers: {'Authorization': 'Bearer $token'},
     );
     if (response['success'] != true) {
       final message = response['error'] ?? response['message'];
