@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../core/config/api_config.dart';
 import '../core/network/api_client.dart';
+import '../core/network/api_failure.dart';
 import '../features/auth/application/patient_auth_controller.dart';
 import '../features/auth/application/patient_auth_scope.dart';
 import '../features/auth/application/patient_auth_setup.dart';
@@ -28,9 +30,13 @@ class PatientPortalApp extends StatefulWidget {
   State<PatientPortalApp> createState() => _PatientPortalAppState();
 }
 
-class _PatientPortalAppState extends State<PatientPortalApp> {
+class _PatientPortalAppState extends State<PatientPortalApp>
+    with WidgetsBindingObserver {
+  static const _sessionRefreshInterval = Duration(hours: 12);
+
   ThemeMode _themeMode = ThemeMode.light;
   bool _isLoggingOut = false;
+  Timer? _sessionRefreshTimer;
   late final PatientAuthController _controller;
   late final bool _ownsController;
   late final FramesCatalogRepository _framesCatalogRepository;
@@ -44,6 +50,7 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final setup =
         widget.setup ??
         (widget.controller == null ? createPatientAuthSetup() : null);
@@ -77,13 +84,41 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
     if (_controller.currentSession != null) {
       unawaited(_controller.loadCurrentPatientIdentity());
     }
+    if (kIsWeb) {
+      _sessionRefreshTimer = Timer.periodic(
+        _sessionRefreshInterval,
+        (_) => unawaited(_refreshSession()),
+      );
+    }
   }
 
   @override
   void dispose() {
+    _sessionRefreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     if (_ownsController) _controller.dispose();
     if (!_ownsController) _ownedApiClient?.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (kIsWeb && state == AppLifecycleState.resumed) {
+      unawaited(_refreshSession());
+    }
+  }
+
+  Future<void> _refreshSession() async {
+    if (!mounted ||
+        _controller.currentSession == null ||
+        _controller.isLoadingIdentity) {
+      return;
+    }
+    try {
+      await _controller.validateCurrentSession();
+    } on ApiFailure catch (failure) {
+      debugPrint('Unable to refresh patient session: ${failure.message}');
+    }
   }
 
   void _toggleTheme() {
@@ -127,6 +162,11 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
             AnimatedBuilder(
               animation: _controller,
               builder: (context, _) {
+                if (_controller.isLoadingIdentity) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
                 final authenticated = _controller.currentSession != null;
                 if (!authenticated) {
                   return Theme(
@@ -134,21 +174,11 @@ class _PatientPortalAppState extends State<PatientPortalApp> {
                     child: LoginPage(controller: _controller),
                   );
                 }
-                final dashboard = DashboardPage(
+                return DashboardPage(
                   isDark: _themeMode == ThemeMode.dark,
                   onToggleTheme: _toggleTheme,
                   onLogout: _logout,
                   logoutEnabled: authenticated,
-                );
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    dashboard,
-                    if (_controller.isLoadingIdentity)
-                      const Scaffold(
-                        body: Center(child: CircularProgressIndicator()),
-                      ),
-                  ],
                 );
               },
             ),

@@ -28,6 +28,7 @@ class PatientAuthController extends ChangeNotifier {
   bool _isLoadingIdentity = false;
   ApiFailure? _identityFailure;
   Future<bool>? _pendingIdentityLoad;
+  Future<bool>? _pendingSessionValidation;
   int _authGeneration = 0;
 
   bool get isLoading => _isLoading;
@@ -37,6 +38,40 @@ class PatientAuthController extends ChangeNotifier {
   bool get isLoadingIdentity => _isLoadingIdentity;
   ApiFailure? get identityFailure => _identityFailure;
   PatientSession? get currentSession => sessionStore.currentSession;
+
+  void updateCurrentSessionName(String name) {
+    final session = currentSession;
+    final normalizedName = name.trim();
+    if (session == null || normalizedName.isEmpty || session.name == normalizedName) {
+      return;
+    }
+    sessionStore.save(
+      PatientSession(
+        patientId: session.patientId,
+        name: normalizedName,
+        email: session.email,
+        token: session.token,
+        rememberMe: session.rememberMe,
+        status: session.status,
+        emailVerified: session.emailVerified,
+      ),
+    );
+    notifyListeners();
+  }
+
+  int loginLockoutRemainingSeconds(String email) {
+    final normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail.isEmpty) return 0;
+    final lockoutUntil = _loginLockouts[normalizedEmail];
+    if (lockoutUntil == null) return 0;
+
+    final remaining = lockoutUntil.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      _loginLockouts.remove(normalizedEmail);
+      return 0;
+    }
+    return (remaining.inMilliseconds / 1000).ceil();
+  }
 
   Future<bool> loadCurrentPatientIdentity() {
     final session = currentSession;
@@ -85,7 +120,7 @@ class PatientAuthController extends ChangeNotifier {
           patientId: identity.patientId,
           name: identity.name,
           email: identity.email,
-          token: requestedSession.token,
+          token: identity.token,
           rememberMe: current.rememberMe,
           status: identity.status,
           emailVerified: identity.emailVerified,
@@ -140,7 +175,19 @@ class PatientAuthController extends ChangeNotifier {
     notifyListeners();
     final operation = Future<EmailVerificationResult>.sync(
       () => repository.verifyEmail(email: email, otp: otp),
-    );
+    ).then((result) {
+      final session = result.session;
+      if (session != null) {
+        _authGeneration++;
+        _pendingIdentityLoad = null;
+        _pendingSessionValidation = null;
+        _isLoadingIdentity = false;
+        _identityFailure = null;
+        sessionStore.save(session);
+        notifyListeners();
+      }
+      return result;
+    });
     _pendingVerification = operation;
     return operation.whenComplete(() {
       _pendingVerification = null;
@@ -168,15 +215,67 @@ class PatientAuthController extends ChangeNotifier {
   Future<bool> validateCurrentSession() async {
     final session = currentSession;
     if (session == null) return false;
+    final pending = _pendingSessionValidation;
+    if (pending != null) return pending;
+
+    final generation = _authGeneration;
+    final operation = _validateCurrentSession(session, generation);
+    _pendingSessionValidation = operation;
+    return operation.whenComplete(() {
+      if (identical(_pendingSessionValidation, operation)) {
+        _pendingSessionValidation = null;
+      }
+    });
+  }
+
+  Future<bool> _validateCurrentSession(
+    PatientSession requestedSession,
+    int generation,
+  ) async {
     try {
-      await repository.validateSession(session.token);
+      final identity = await repository.validateSession(requestedSession.token);
+      final current = currentSession;
+      if (generation != _authGeneration ||
+          current == null ||
+          current.token != requestedSession.token ||
+          current.patientId != requestedSession.patientId) {
+        return false;
+      }
+      if (identity.patientId != requestedSession.patientId) {
+        throw const ApiFailure(
+          kind: ApiFailureKind.invalidResponse,
+          message: 'The clinic service returned a different patient identity.',
+        );
+      }
+      sessionStore.save(
+        PatientSession(
+          patientId: identity.patientId,
+          name: identity.name,
+          email: identity.email,
+          token: identity.token,
+          rememberMe: current.rememberMe,
+          status: identity.status,
+          emailVerified: identity.emailVerified,
+        ),
+      );
+      _identityFailure = null;
+      notifyListeners();
       return true;
     } on ApiFailure catch (failure) {
+      final current = currentSession;
+      if (generation != _authGeneration ||
+          current == null ||
+          current.token != requestedSession.token ||
+          current.patientId != requestedSession.patientId) {
+        return false;
+      }
       if (failure.statusCode == 401 || failure.statusCode == 403) {
         sessionStore.clear();
         notifyListeners();
         return false;
       }
+      _identityFailure = failure;
+      notifyListeners();
       rethrow;
     }
   }
@@ -184,6 +283,7 @@ class PatientAuthController extends ChangeNotifier {
   void logout() {
     _authGeneration++;
     _pendingIdentityLoad = null;
+    _pendingSessionValidation = null;
     _isLoadingIdentity = false;
     _identityFailure = null;
     sessionStore.clear();
@@ -196,25 +296,18 @@ class PatientAuthController extends ChangeNotifier {
     required bool rememberMe,
   }) {
     final normalizedEmail = email.trim().toLowerCase();
-    final lockoutUntil = _loginLockouts[normalizedEmail];
-    if (lockoutUntil != null) {
-      if (DateTime.now().isBefore(lockoutUntil)) {
-        final retryAfterSeconds = lockoutUntil
-            .difference(DateTime.now())
-            .inSeconds
-            .clamp(1, 900);
-        return Future.error(
-          ApiFailure(
-            kind: ApiFailureKind.http,
-            statusCode: 429,
-            code: 'LOGIN_TOO_MANY_ATTEMPTS',
-            retryAfterSeconds: retryAfterSeconds,
-            message:
-                'Too many login attempts. Please try again in $retryAfterSeconds seconds.',
-          ),
-        );
-      }
-      _loginLockouts.remove(normalizedEmail);
+    final retryAfterSeconds = loginLockoutRemainingSeconds(normalizedEmail);
+    if (retryAfterSeconds > 0) {
+      return Future.error(
+        ApiFailure(
+          kind: ApiFailureKind.http,
+          statusCode: 429,
+          code: 'LOGIN_TOO_MANY_ATTEMPTS',
+          retryAfterSeconds: retryAfterSeconds,
+          message:
+              'Too many login attempts. Please try again in $retryAfterSeconds seconds.',
+        ),
+      );
     }
 
     final pending = _pendingLogin;
@@ -254,6 +347,7 @@ class PatientAuthController extends ChangeNotifier {
         _loginLockouts[email.trim().toLowerCase()] = DateTime.now().add(
           Duration(seconds: retryAfterSeconds),
         );
+        notifyListeners();
       }
       rethrow;
     }
@@ -262,6 +356,7 @@ class PatientAuthController extends ChangeNotifier {
     _loginLockouts.remove(email.trim().toLowerCase());
     _authGeneration++;
     _pendingIdentityLoad = null;
+    _pendingSessionValidation = null;
     _isLoadingIdentity = false;
     _identityFailure = null;
     sessionStore.save(session);
@@ -272,6 +367,7 @@ class PatientAuthController extends ChangeNotifier {
   void dispose() {
     _authGeneration++;
     _pendingIdentityLoad = null;
+    _pendingSessionValidation = null;
     _isLoadingIdentity = false;
     onDispose?.call();
     super.dispose();

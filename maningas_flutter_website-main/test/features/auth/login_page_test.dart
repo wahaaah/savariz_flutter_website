@@ -422,6 +422,13 @@ class _FakePatientProfileRepository implements PatientProfileRepository {
     required String patientId,
     required String token,
   }) async => const PatientProfileDetails();
+
+  @override
+  Future<void> updatePatientDetails({
+    required String patientId,
+    required String token,
+    required PatientProfileUpdate update,
+  }) async {}
 }
 
 class _FakeSupportCenterRepository implements SupportCenterRepository {

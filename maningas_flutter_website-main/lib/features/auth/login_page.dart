@@ -89,9 +89,7 @@ class _LoginPageState extends State<LoginPage> {
         );
         return;
       }
-      setState(() {
-        _feedbackMessage = 'Sign-in successful.';
-      });
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on ApiFailure catch (failure) {
       if (!mounted) return;
       setState(() {

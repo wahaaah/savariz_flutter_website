@@ -1,3 +1,5 @@
+import 'patient_session.dart';
+
 class PatientRegistrationRequest {
   const PatientRegistrationRequest({
     required this.name,
@@ -59,9 +61,10 @@ class PatientRegistrationResult {
 }
 
 class EmailVerificationResult {
-  const EmailVerificationResult({required this.message});
+  const EmailVerificationResult({required this.message, this.session});
 
   final String message;
+  final PatientSession? session;
 }
 
 class ResendVerificationResult {

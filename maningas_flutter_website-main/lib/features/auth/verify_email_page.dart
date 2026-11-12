@@ -159,14 +159,16 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
         otp: _code,
       );
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => LoginPage(
-            initialMessage: result.message,
+      if (result.session != null) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } else {
+        Navigator.of(context).pushAndRemoveUntil<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => LoginPage(initialMessage: result.message),
           ),
-        ),
-        (_) => false,
-      );
+          (_) => false,
+        );
+      }
     } on ApiFailure catch (failure) {
       if (!mounted) return;
       setState(() {

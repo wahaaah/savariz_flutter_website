@@ -18,6 +18,7 @@ void main() {
             'email': 'patient@example.com',
             'password': 'patient-password',
             'rememberMe': true,
+            'clientType': 'mobile',
           });
           return http.Response(
             jsonEncode({
@@ -200,23 +201,23 @@ void main() {
   test(
     'surfaces password reset rejection from a successful HTTP response',
     () async {
-    final repository = PatientAuthApiRepository(
-      ApiClient(
-        client: MockClient((_) async {
-          return http.Response(
-            jsonEncode({'success': false, 'message': 'Invalid OTP.'}),
-            200,
-          );
-        }),
-        baseUri: Uri.parse('https://api.example.test'),
-      ),
-    );
+      final repository = PatientAuthApiRepository(
+        ApiClient(
+          client: MockClient((_) async {
+            return http.Response(
+              jsonEncode({'success': false, 'message': 'Invalid OTP.'}),
+              200,
+            );
+          }),
+          baseUri: Uri.parse('https://api.example.test'),
+        ),
+      );
 
       await expectLater(
         repository.resetPassword(
-        email: 'patient@example.com',
-        otp: '123456',
-        newPassword: 'ValidPass123',
+          email: 'patient@example.com',
+          otp: '123456',
+          newPassword: 'ValidPass123',
         ),
         throwsA(
           isA<ApiFailure>().having(

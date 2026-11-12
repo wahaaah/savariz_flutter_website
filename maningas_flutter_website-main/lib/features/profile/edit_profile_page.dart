@@ -29,6 +29,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   PatientSession? _session;
   String? _loadError;
   bool _isLoadingProfile = false;
+  bool _isSavingProfile = false;
   bool _didLoadInitialDetails = false;
   int _loadGeneration = 0;
   String? _status;
@@ -371,13 +372,54 @@ class _EditProfilePageState extends State<EditProfilePage> {
     return null;
   }
 
-  void _saveProfile() {
-    final valid = _formKey.currentState!.validate();
+  Future<void> _saveProfile() async {
+    FocusScope.of(context).unfocus();
+    if (_isSavingProfile || !_formKey.currentState!.validate()) return;
+
+    final repository = _profileRepository;
+    final session = _session;
+    final controller = PatientAuthScope.maybeOf(context);
+    if (repository == null || session == null || controller == null) {
+      setState(() {
+        _status = 'Please sign in again before saving your profile.';
+      });
+      return;
+    }
+
+    final update = PatientProfileUpdate(
+      firstName: _value('firstName'),
+      middleName: _value('middleName'),
+      lastName: _value('lastName'),
+      dateOfBirth: _value('dateOfBirth'),
+      gender: _value('gender'),
+      contactNumber: _value('contact'),
+      addressUnit: _value('addressUnit'),
+      street: _value('addressStreet'),
+      barangay: _value('addressBarangay'),
+      cityMunicipality: _value('addressCityMunicipality'),
+      province: _value('addressProvince'),
+      zipCode: _value('addressZipCode'),
+    );
+
     setState(() {
-      _status = valid
-          ? 'Profile updates are not connected to the clinic API. Nothing was saved.'
-          : null;
+      _isSavingProfile = true;
+      _status = null;
     });
+    try {
+      await repository.updatePatientDetails(
+        patientId: session.patientId,
+        token: session.token,
+        update: update,
+      );
+      if (!mounted) return;
+      controller.updateCurrentSessionName(update.fullName);
+      Navigator.of(context).pop(true);
+    } on ApiFailure catch (failure) {
+      if (!mounted) return;
+      setState(() => _status = failure.message);
+    } finally {
+      if (mounted) setState(() => _isSavingProfile = false);
+    }
   }
 
   void _cancel() {
@@ -644,9 +686,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         final vertical = buttonConstraints.maxWidth < 430;
                         final save = FilledButton.icon(
                           key: const ValueKey('edit-profile-save'),
-                          onPressed: _saveProfile,
-                          icon: const Icon(Icons.check_rounded),
-                          label: const Text('Save Changes'),
+                          onPressed: _isSavingProfile ? null : _saveProfile,
+                          icon: _isSavingProfile
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.check_rounded),
+                          label: Text(
+                            _isSavingProfile ? 'Saving...' : 'Save Changes',
+                          ),
                         );
                         final cancel = OutlinedButton.icon(
                           key: const ValueKey('edit-profile-cancel'),
@@ -677,7 +729,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Profile updates are not connected to the clinic API.',
+                      'Your changes will be saved to your clinic profile.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context)

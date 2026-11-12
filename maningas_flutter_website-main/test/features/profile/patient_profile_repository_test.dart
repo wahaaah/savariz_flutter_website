@@ -1,7 +1,53 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:patient_portal_flutter/core/network/api_client.dart';
 import 'package:patient_portal_flutter/features/profile/patient_profile_repository.dart';
 
 void main() {
+  test('sends profile edits to the authenticated patient profile endpoint', () async {
+    final update = PatientProfileUpdate(
+      firstName: 'Juan',
+      middleName: 'Santos',
+      lastName: 'Dela Cruz',
+      dateOfBirth: '1995-04-12',
+      gender: 'Male',
+      contactNumber: '09171234567',
+      addressUnit: 'Block 5 Lot 10',
+      street: 'Sampaguita Street',
+      barangay: 'San Isidro',
+      cityMunicipality: 'Example City',
+      province: 'Example Province',
+      zipCode: '3019',
+    );
+    final repository = ApiPatientProfileRepository(
+      ApiClient(
+        client: MockClient((request) async {
+          expect(request.method, 'PUT');
+          expect(request.url.path, '/api/patients/me/profile');
+          expect(jsonDecode(request.body), update.toJson());
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'patient_id': 'GVC-1234',
+              'name': update.fullName,
+            }),
+            200,
+          );
+        }),
+        baseUri: Uri.parse('https://api.example.test'),
+      ),
+    );
+
+    await repository.updatePatientDetails(
+      patientId: 'GVC-1234',
+      token: 'patient-token',
+      update: update,
+    );
+  });
+
   test('uses a formatted API address when components are not returned', () {
     final details = PatientProfileDetails.fromResponse({
       'patient': {

@@ -137,16 +137,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   _PageHeader(
                     compact: compact,
                     onEdit: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => EditProfilePage(
-                            initialDetails: _details,
-                            initialName:
-                                _details?.fullName ??
-                                _controller?.currentSession?.name,
-                          ),
-                        ),
-                      );
+                      unawaited(_openEditProfile());
                     },
                     onChangePassword: () {
                       Navigator.of(context).push(
@@ -237,6 +228,24 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openEditProfile() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => EditProfilePage(
+          initialDetails: _details,
+          initialName:
+              _details?.fullName ?? _controller?.currentSession?.name,
+        ),
+      ),
+    );
+    if (!mounted || saved != true) return;
+    _detailsSessionKey = null;
+    _loadPatientDetails();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile updated successfully.')),
     );
   }
 

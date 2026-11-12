@@ -220,10 +220,68 @@ class PatientProfileDetails {
   final String? zipCode;
 }
 
+class PatientProfileUpdate {
+  const PatientProfileUpdate({
+    required this.firstName,
+    required this.middleName,
+    required this.lastName,
+    required this.dateOfBirth,
+    required this.gender,
+    required this.contactNumber,
+    required this.addressUnit,
+    required this.street,
+    required this.barangay,
+    required this.cityMunicipality,
+    required this.province,
+    required this.zipCode,
+  });
+
+  final String firstName;
+  final String middleName;
+  final String lastName;
+  final String dateOfBirth;
+  final String gender;
+  final String contactNumber;
+  final String addressUnit;
+  final String street;
+  final String barangay;
+  final String cityMunicipality;
+  final String province;
+  final String zipCode;
+
+  String get fullName =>
+      [firstName, middleName, lastName].where((part) => part.isNotEmpty).join(' ');
+
+  String get address =>
+      [addressUnit, street, barangay, cityMunicipality, province, zipCode]
+          .where((part) => part.isNotEmpty)
+          .join(', ');
+
+  Map<String, Object?> toJson() => {
+    'name': fullName,
+    'date_of_birth': dateOfBirth,
+    'gender': gender,
+    'contact': contactNumber,
+    'address': address,
+    'address_unit': addressUnit,
+    'address_street': street,
+    'address_barangay': barangay,
+    'address_city_municipality': cityMunicipality,
+    'address_province': province,
+    'address_zip_code': zipCode,
+  };
+}
+
 abstract interface class PatientProfileRepository {
   Future<PatientProfileDetails> getPatientDetails({
     required String patientId,
     required String token,
+  });
+
+  Future<void> updatePatientDetails({
+    required String patientId,
+    required String token,
+    required PatientProfileUpdate update,
   });
 }
 
@@ -264,6 +322,36 @@ class ApiPatientProfileRepository implements PatientProfileRepository {
         );
       }
       rethrow;
+    }
+  }
+
+  @override
+  Future<void> updatePatientDetails({
+    required String patientId,
+    required String token,
+    required PatientProfileUpdate update,
+  }) async {
+    final response = await _apiClient.putJson(
+      '/api/patients/me/profile',
+      body: update.toJson(),
+      headers: {'Authorization': '******'},
+    );
+    if (response['success'] != true) {
+      final message = response['error'] ?? response['message'];
+      throw ApiFailure(
+        kind: ApiFailureKind.invalidResponse,
+        message: message is String && message.trim().isNotEmpty
+            ? message.trim()
+            : 'The clinic service could not save your profile.',
+      );
+    }
+    final responsePatientId = response['patient_id'];
+    if (responsePatientId != null &&
+        responsePatientId.toString() != patientId) {
+      throw const ApiFailure(
+        kind: ApiFailureKind.invalidResponse,
+        message: 'The clinic service updated a different patient profile.',
+      );
     }
   }
 }

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_failure.dart';
 import '../domain/patient_registration.dart';
@@ -21,6 +23,7 @@ class PatientAuthApiRepository implements PatientAuthRepository {
         'email': email.trim(),
         'password': password,
         'rememberMe': rememberMe,
+        'clientType': kIsWeb ? 'web' : 'mobile',
       },
     );
 
@@ -80,6 +83,7 @@ class PatientAuthApiRepository implements PatientAuthRepository {
     final name = response['name'];
     final email = response['email'];
     final status = response['status'];
+    final refreshedToken = response['token'];
     if (response['success'] != true ||
         patientId == null ||
         patientId.toString().isEmpty ||
@@ -89,6 +93,8 @@ class PatientAuthApiRepository implements PatientAuthRepository {
         email.trim().isEmpty ||
         status is! String ||
         status.trim().isEmpty ||
+        refreshedToken is! String ||
+        refreshedToken.isEmpty ||
         response['email_verified'] != true) {
       throw const ApiFailure(
         kind: ApiFailureKind.invalidResponse,
@@ -100,7 +106,7 @@ class PatientAuthApiRepository implements PatientAuthRepository {
       patientId: patientId.toString(),
       name: name,
       email: email,
-      token: token,
+      token: refreshedToken,
       rememberMe: false,
       status: status,
       emailVerified: true,
@@ -145,16 +151,29 @@ class PatientAuthApiRepository implements PatientAuthRepository {
   }) async {
     final response = await _apiClient.postJson(
       '/api/patients/verify-email',
-      body: {'email': email.trim(), 'otp': otp},
+      body: {
+        'email': email.trim(),
+        'otp': otp,
+        'clientType': kIsWeb ? 'web' : 'mobile',
+      },
     );
     final patientId = response['patient_id'];
     final verifiedEmail = response['email'];
+    final name = response['name'];
+    final token = response['token'];
+    final status = response['status'];
     if (response['success'] != true ||
         response['email_verified'] != true ||
         patientId == null ||
         patientId.toString().isEmpty ||
         verifiedEmail is! String ||
-        verifiedEmail.trim().toLowerCase() != email.trim().toLowerCase()) {
+        verifiedEmail.trim().toLowerCase() != email.trim().toLowerCase() ||
+        name is! String ||
+        name.trim().isEmpty ||
+        token is! String ||
+        token.isEmpty ||
+        status is! String ||
+        status.trim().isEmpty) {
       throw const ApiFailure(
         kind: ApiFailureKind.invalidResponse,
         message: 'The clinic service returned an invalid verification result.',
@@ -164,7 +183,16 @@ class PatientAuthApiRepository implements PatientAuthRepository {
     return EmailVerificationResult(
       message: message is String && message.trim().isNotEmpty
           ? message.trim()
-          : 'Email verified. Please sign in.',
+          : 'Email verified. You are now signed in.',
+      session: PatientSession(
+        patientId: patientId.toString(),
+        name: name,
+        email: verifiedEmail,
+        token: token,
+        rememberMe: false,
+        status: status,
+        emailVerified: true,
+      ),
     );
   }
 
