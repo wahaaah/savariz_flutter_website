@@ -22,20 +22,43 @@ class _TryOnPageState extends State<TryOnPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.black,
-    child: SafeArea(
-      child: Column(
-        children: [
-          ColoredBox(
-            color: const Color(0xFF111827),
-            child: SizedBox(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Material(
+      color: isDark ? const Color(0xFF0B1220) : const Color(0xFFF8FAFC),
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
               height: 56,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Semantics(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF111827) : Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: isDark
+                        ? const Color(0xFF263449)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '👓 Virtual Try-On',
+                      style: TextStyle(
+                        color: isDark
+                            ? const Color(0xFFF8FAFC)
+                            : const Color(0xFF0F172A),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Semantics(
                     button: true,
                     label: 'Close Try-On',
                     child: IconButton.filled(
@@ -43,23 +66,31 @@ class _TryOnPageState extends State<TryOnPage> {
                       tooltip: 'Close Try-On',
                       onPressed: _closeTryOn,
                       style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xD9000000),
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(48, 48),
-                        maximumSize: const Size(48, 48),
+                        backgroundColor: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF1F5F9),
+                        foregroundColor: isDark
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF64748B),
+                        minimumSize: const Size(34, 34),
+                        maximumSize: const Size(34, 34),
+                        padding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(Icons.close, size: 20),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-          ),
-          Expanded(
-            child: TryOnIframe(key: _iframeKey, uri: widget.uri),
-          ),
-        ],
+            Expanded(
+              child: TryOnIframe(key: _iframeKey, uri: widget.uri),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

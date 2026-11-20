@@ -45,6 +45,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let selectedFrame = null;
 
   let faceModelsReady = false;
+  let faceDetectorOptions = null;
 
   let vtoOpen = false;
 
@@ -639,7 +640,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       preserveDrawingBuffer: false,
     });
 
-    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
     const canvas = threeRenderer.domElement;
 
@@ -692,7 +693,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     threeRenderer.setSize(width, height, false);
 
-    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
     if (cameraVideo) {
       cameraVideo.style.width = "100%";
@@ -1212,7 +1213,12 @@ document.addEventListener("DOMContentLoaded", async () => {
      ========================================================= */
 
   async function detectFace() {
-    if (!faceModelsReady || !cameraVideo || !frameModel) {
+    if (
+      !faceModelsReady ||
+      !faceDetectorOptions ||
+      !cameraVideo ||
+      !frameModel
+    ) {
       return;
     }
 
@@ -1236,13 +1242,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     try {
       const detection = await faceapi
-        .detectSingleFace(
-          cameraVideo,
-          new faceapi.SsdMobilenetv1Options({
-            minConfidence: 0.3,
-            inputSize: 320,
-          }),
-        )
+        .detectSingleFace(cameraVideo, faceDetectorOptions)
         .withFaceLandmarks();
 
       if (!detection) {
@@ -1807,6 +1807,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODEL_PATH),
       ]);
 
+      faceDetectorOptions = new faceapi.SsdMobilenetv1Options({
+        minConfidence: 0.35,
+        inputSize: 320,
+      });
       faceModelsReady = true;
 
       console.log("Patient face-api models loaded.");
