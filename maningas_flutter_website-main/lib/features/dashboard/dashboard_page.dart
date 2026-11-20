@@ -109,17 +109,27 @@ class _DashboardPageState extends State<DashboardPage> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => Dialog(
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          width: (size.width - 32).clamp(280.0, 920.0).toDouble(),
-          height: (size.height - 48).clamp(360.0, 720.0).toDouble(),
-          child: TryOnPage(
-            uri: uri,
-            onClose: () => Navigator.of(context, rootNavigator: true).pop(),
+      builder: (context) {
+        final tryOnPage = TryOnPage(
+          uri: uri,
+          onClose: () => Navigator.of(context, rootNavigator: true).pop(),
+        );
+
+        if (size.width <= 768) {
+          return Dialog.fullscreen(
+            child: tryOnPage,
+          );
+        }
+
+        return Dialog(
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: (size.width - 32).clamp(280.0, 920.0).toDouble(),
+            height: (size.height - 48).clamp(360.0, 720.0).toDouble(),
+            child: tryOnPage,
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -152,31 +162,33 @@ class _DashboardPageState extends State<DashboardPage> {
           onOpenTryOn: _openTryOn,
         ),
         PortalDestination.supportCenter => const SupportCenterPage(),
-        PortalDestination.profile => _isEditingProfile
-            ? EditProfilePage(
-                initialDetails: _editingProfileDetails,
-                initialName: _editingProfileName,
-                authController: _editingProfileController,
-                profileRepository: _editingProfileRepository,
-                session: _editingProfileSession,
-                onSaved: () => _finishProfileEdit(saved: true),
-                onCancel: () => _finishProfileEdit(saved: false),
-              )
-            : ProfilePage(
-                onEditProfile: (
-                  details,
-                  name,
-                  authController,
-                  profileRepository,
-                  patientSession,
-                ) => _editProfile(
-                  details,
-                  name,
-                  authController,
-                  profileRepository,
-                  patientSession,
+        PortalDestination.profile =>
+          _isEditingProfile
+              ? EditProfilePage(
+                  initialDetails: _editingProfileDetails,
+                  initialName: _editingProfileName,
+                  authController: _editingProfileController,
+                  profileRepository: _editingProfileRepository,
+                  session: _editingProfileSession,
+                  onSaved: () => _finishProfileEdit(saved: true),
+                  onCancel: () => _finishProfileEdit(saved: false),
+                )
+              : ProfilePage(
+                  onEditProfile:
+                      (
+                        details,
+                        name,
+                        authController,
+                        profileRepository,
+                        patientSession,
+                      ) => _editProfile(
+                        details,
+                        name,
+                        authController,
+                        profileRepository,
+                        patientSession,
+                      ),
                 ),
-              ),
       },
     );
   }

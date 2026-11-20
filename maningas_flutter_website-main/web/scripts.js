@@ -88,6 +88,16 @@ document.addEventListener("DOMContentLoaded", async () => {
      UTILITY
      ========================================================= */
 
+  function getTryOnCalibration() {
+    const isMobileLayout = window.matchMedia(
+      "(max-width: 768px), (pointer: coarse)",
+    ).matches;
+
+    return isMobileLayout
+      ? { detectorInputSize: 320, frameWidthRatio: 1.08 }
+      : { detectorInputSize: 512, frameWidthRatio: 1.8 };
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -1359,10 +1369,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         modelDepth *
         Math.tan(THREE.MathUtils.degToRad(threeCamera.fov / 2)) *
         threeCamera.aspect;
-      const isMobileLayout = window.matchMedia(
-        "(max-width: 768px), (pointer: coarse)",
-      ).matches;
-      const frameWidthRatio = isMobileLayout ? 1.08 : 1.8;
+      const { frameWidthRatio } = getTryOnCalibration();
       const desiredWorldWidth =
         visibleWorldWidth * (eyeSpan / viewportWidth) * frameWidthRatio;
 
@@ -1809,7 +1816,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       faceDetectorOptions = new faceapi.SsdMobilenetv1Options({
         minConfidence: 0.35,
-        inputSize: 320,
+        inputSize: getTryOnCalibration().detectorInputSize,
       });
       faceModelsReady = true;
 
