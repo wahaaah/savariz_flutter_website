@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../app/theme.dart';
 import 'portal_navigation.dart';
@@ -104,7 +105,13 @@ class _BrandHeader extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: primary.withValues(alpha: 0.22)),
               ),
-              child: Icon(Icons.visibility_outlined, color: primary, size: 23),
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: SvgPicture.asset(
+                  'assets/icons/gonzalesclinic_logo.svg',
+                  fit: BoxFit.contain,
+                ),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
