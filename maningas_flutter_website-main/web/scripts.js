@@ -653,6 +653,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     canvas.style.width = "100%";
     canvas.style.height = "100%";
 
+    canvas.style.transform = "scaleX(-1)";
+    canvas.style.transformOrigin = "center";
+
     canvas.style.zIndex = "2";
 
     canvas.style.pointerEvents = "none";
@@ -715,7 +718,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     return {
-      x: (1 - x) * viewportWidth,
+      x: x * viewportWidth,
       y: y * viewportHeight,
     };
   }
@@ -775,7 +778,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    requestAnimationFrame(renderLoop);
+    renderLoop();
   }
 
   /* =========================================================
@@ -1115,11 +1118,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
           frameModel.scale.set(1, 1, 1);
 
-          /*
-           * Keep the model orientation used
-           * by the existing catalog.
-           */
-          frameModel.rotation.set(0, Math.PI, 0);
+          const isMeshyModel =
+            /(?:^|\/)frame-\d+-meshy(?:\.glb)?(?:[?#]|$)/i.test(modelUrl);
+          frameModel.rotation.set(0, isMeshyModel ? 0 : Math.PI, 0);
 
           frameModel.visible = false;
 
@@ -1280,7 +1281,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (!leftCenter || !rightCenter) {
         frameModel.visible = false;
-        hasFrameTarget = false;
 
         return;
       }
@@ -1326,7 +1326,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const angle = Math.atan2(deltaY, deltaX);
 
-      targetFrameRoll = angle;
+      targetFrameRoll = -angle;
 
       /* =====================================================
          EYE DISTANCE
@@ -1339,7 +1339,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (!Number.isFinite(eyeDistance) || eyeDistance <= 0) {
         frameModel.visible = false;
-        hasFrameTarget = false;
 
         return;
       }
