@@ -55,6 +55,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let detectionTimer = null;
   let detectionRunning = false;
   let faceDetectionStarted = false;
+  let missedFaceDetections = 0;
 
   let threeScene = null;
   let threeCamera = null;
@@ -65,22 +66,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   let hasFrameTarget = false;
   let targetFramePosition = new THREE.Vector3();
   let targetFrameRoll = 0;
+  let targetFrameYaw = Math.PI;
   let targetFrameScale = 1;
   let lastFrameRenderTimestamp = 0;
 
-  /*
-   * Base normalized scale of the current GLTF.
-   */
   let frameModelNormalizedScale = 1;
-
-  /*
-   * Normalized dimensions of the current model.
-   */
-  let frameModelBaseSize = {
-    x: 1,
-    y: 1,
-    z: 1,
-  };
+  let modelVerticalOffsetRatio = 0;
 
   let animationStarted = false;
 
@@ -628,7 +619,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     threeScene = new THREE.Scene();
 
-    threeCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    threeCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
 
     threeCamera.position.set(0, 0, 10);
 
@@ -776,6 +767,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           Math.cos(targetFrameRoll - frameModel.rotation.z),
         );
         frameModel.rotation.z += rollDifference * smoothing;
+        const yawDifference = Math.atan2(
+          Math.sin(targetFrameYaw - frameModel.rotation.y),
+          Math.cos(targetFrameYaw - frameModel.rotation.y),
+        );
+        frameModel.rotation.y += yawDifference * smoothing;
         frameModel.scale.setScalar(
           frameModel.scale.x +
             (targetFrameScale - frameModel.scale.x) * smoothing,
@@ -801,14 +797,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (!frameModel || !threeScene) {
       frameModel = null;
-
       frameModelNormalizedScale = 1;
-
-      frameModelBaseSize = {
-        x: 1,
-        y: 1,
-        z: 1,
-      };
+      modelVerticalOffsetRatio = 0;
 
       return;
     }
@@ -840,14 +830,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     frameModel = null;
-
     frameModelNormalizedScale = 1;
-
-    frameModelBaseSize = {
-      x: 1,
-      y: 1,
-      z: 1,
-    };
+    modelVerticalOffsetRatio = 0;
   }
 
   /* =========================================================
@@ -1064,6 +1048,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     faceDetectionStarted = false;
 
     detectionRunning = false;
+    missedFaceDetections = 0;
 
     if (cameraStream) {
       cameraStream.getTracks().forEach((track) => {
@@ -1124,61 +1109,104 @@ document.addEventListener("DOMContentLoaded", async () => {
         (gltf) => {
           removeCurrentModel();
 
-          frameModel = gltf.scene;
           hasFrameTarget = false;
-
-          frameModel.scale.set(1, 1, 1);
+          missedFaceDetections = 0;
+          targetFrameYaw = Math.PI;
 
           const isMeshyModel =
             /(?:^|\/)frame-\d+-meshy(?:\.glb)?(?:[?#]|$)/i.test(modelUrl);
-          frameModel.rotation.set(0, isMeshyModel ? 0 : Math.PI, 0);
 
-          frameModel.visible = false;
+          const gltfScene = gltf.scene;
+          gltfScene.updateMatrixWorld(true);
+          const sourceBox = new THREE.Box3().setFromObject(gltfScene);
+          const sourceSize = sourceBox.getSize(new THREE.Vector3());
+          const sourceCenter = sourceBox.getCenter(new THREE.Vector3());
+          let lensPlane = null;
+          let largestLensPlaneArea = 0;
 
-          /* =================================================
-               NORMALIZE MODEL
-               ================================================= */
+          gltfScene.traverse((object) => {
+            if (!object.isMesh || !object.material) return;
+            const materials = Array.isArray(object.material)
+              ? object.material
+              : [object.material];
+            if (!materials.some((material) => material.transparent)) return;
 
-          const boundingBox = new THREE.Box3().setFromObject(frameModel);
-
-          const modelSize = new THREE.Vector3();
-
-          boundingBox.getSize(modelSize);
-
-          const maxDimension = Math.max(modelSize.x, modelSize.y, modelSize.z);
-
-          console.log("Original GLTF dimensions:", {
-            x: modelSize.x,
-            y: modelSize.y,
-            z: modelSize.z,
-            maxDimension,
+            const meshBox = new THREE.Box3().setFromObject(object);
+            const meshSize = meshBox.getSize(new THREE.Vector3());
+            const dimensions = [meshSize.x, meshSize.y, meshSize.z].sort(
+              (left, right) => left - right,
+            );
+            const planeArea = dimensions[1] * dimensions[2];
+            if (
+              dimensions[0] < dimensions[1] * 0.08 &&
+              planeArea > largestLensPlaneArea
+            ) {
+              lensPlane = object;
+              largestLensPlaneArea = planeArea;
+            }
           });
 
-          if (Number.isFinite(maxDimension) && maxDimension > 0) {
-            frameModelNormalizedScale = 1 / maxDimension;
+          gltfScene.position.sub(sourceCenter);
+          modelVerticalOffsetRatio = 0;
 
-            frameModel.scale.set(
-              frameModelNormalizedScale,
-              frameModelNormalizedScale,
-              frameModelNormalizedScale,
-            );
-          } else {
-            frameModelNormalizedScale = 1;
+          const modelContent = new THREE.Group();
+          modelContent.add(gltfScene);
+          if (!isMeshyModel) {
+            if (lensPlane) {
+              const lensSize = new THREE.Box3()
+                .setFromObject(lensPlane)
+                .getSize(new THREE.Vector3());
+              if (lensSize.y < lensSize.x && lensSize.y < lensSize.z) {
+                modelContent.rotation.x = -Math.PI / 2;
+              } else if (lensSize.x < lensSize.y && lensSize.x < lensSize.z) {
+                modelContent.rotation.y = Math.PI / 2;
+              } else if (lensSize.z < lensSize.x && lensSize.z < lensSize.y) {
+                modelContent.rotation.y = Math.PI;
+              }
+            } else if (
+              sourceSize.y < sourceSize.x &&
+              sourceSize.y < sourceSize.z
+            ) {
+              modelContent.rotation.x = -Math.PI / 2;
+              modelVerticalOffsetRatio = 0.5;
+            } else if (
+              sourceSize.x < sourceSize.y &&
+              sourceSize.x < sourceSize.z
+            ) {
+              modelContent.rotation.y = Math.PI / 2;
+            } else if (
+              sourceSize.z < sourceSize.x &&
+              sourceSize.z < sourceSize.y
+            ) {
+              modelContent.rotation.y = Math.PI;
+            }
           }
 
-          frameModelBaseSize = {
-            x: modelSize.x * frameModelNormalizedScale,
+          modelContent.updateMatrixWorld(true);
+          if (lensPlane) {
+            const lensCenter = new THREE.Box3()
+              .setFromObject(lensPlane)
+              .getCenter(new THREE.Vector3());
+            modelContent.position.x -= lensCenter.x;
+            modelContent.position.y -= lensCenter.y;
+            modelContent.updateMatrixWorld(true);
+          }
 
-            y: modelSize.y * frameModelNormalizedScale,
+          const modelBox = new THREE.Box3().setFromObject(modelContent);
+          const modelSize = modelBox.getSize(new THREE.Vector3());
+          const horizontalModelWidth =
+            modelSize.x > 0 ? modelSize.x : Math.max(modelSize.y, modelSize.z);
+          frameModelNormalizedScale =
+            Number.isFinite(horizontalModelWidth) && horizontalModelWidth > 0
+              ? 1 / horizontalModelWidth
+              : 1;
 
-            z: modelSize.z * frameModelNormalizedScale,
-          };
-
-          console.log("Normalized GLTF dimensions:", frameModelBaseSize);
+          frameModel = new THREE.Group();
+          frameModel.add(modelContent);
+          frameModel.scale.setScalar(frameModelNormalizedScale);
+          frameModel.visible = false;
 
           threeScene.add(frameModel);
-
-          frameModel.visible = false;
 
           resolve(frameModel);
         },
@@ -1256,8 +1284,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         .withFaceLandmarks();
 
       if (!detection) {
-        frameModel.visible = false;
-        hasFrameTarget = false;
+        missedFaceDetections += 1;
+        if (missedFaceDetections >= 2) {
+          frameModel.visible = false;
+          hasFrameTarget = false;
+        }
 
         setVTOStatus("🔴 No face detected");
 
@@ -1291,9 +1322,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (!leftCenter || !rightCenter) {
         frameModel.visible = false;
+        hasFrameTarget = false;
 
         return;
       }
+      missedFaceDetections = 0;
 
       const videoWidth = cameraVideo.videoWidth;
 
@@ -1303,11 +1336,7 @@ document.addEventListener("DOMContentLoaded", async () => {
          EXACT MIDPOINT BETWEEN THE EYES
          ===================================================== */
 
-      const eyeCenterX = (leftCenter.x + rightCenter.x) / 2;
-
-      const eyeCenterY = (leftCenter.y + rightCenter.y) / 2;
-
-      const worldZ = 1;
+      const worldZ = 0;
       const leftEyeViewport = videoPointToViewport(
         leftCenter,
         videoWidth,
@@ -1330,39 +1359,57 @@ document.addEventListener("DOMContentLoaded", async () => {
          HEAD TILT
          ===================================================== */
 
-      const deltaX = rightCenter.x - leftCenter.x;
+      const deltaX = rightEyeViewport.x - leftEyeViewport.x;
 
-      const deltaY = rightCenter.y - leftCenter.y;
+      const deltaY = rightEyeViewport.y - leftEyeViewport.y;
 
       const angle = Math.atan2(deltaY, deltaX);
 
       targetFrameRoll = -angle;
 
-      /* =====================================================
-         EYE DISTANCE
-         ===================================================== */
-
-      const eyeDistance = Math.sqrt(
-        Math.pow(rightCenter.x - leftCenter.x, 2) +
-          Math.pow(rightCenter.y - leftCenter.y, 2),
+      const viewportWidth = Math.max(modalContainer.clientWidth, 1);
+      const displaySize = {
+        width: viewportWidth,
+        height: Math.max(modalContainer.clientHeight, 1),
+      };
+      const eyeSpanXs = [...leftEye, ...rightEye].map(
+        (point) =>
+          videoPointToViewport(point, videoWidth, videoHeight).x,
       );
-
-      if (!Number.isFinite(eyeDistance) || eyeDistance <= 0) {
+      const eyeSpan = Math.max(...eyeSpanXs) - Math.min(...eyeSpanXs);
+      const distanceBetweenEyes = Math.hypot(
+        rightEyeViewport.x - leftEyeViewport.x,
+        rightEyeViewport.y - leftEyeViewport.y,
+      );
+      if (!Number.isFinite(distanceBetweenEyes) || distanceBetweenEyes <= 0) {
         frameModel.visible = false;
+        hasFrameTarget = false;
 
         return;
       }
 
-      /* =====================================================
-         FRAME SIZE
-         ===================================================== */
+      const eyeMidpointX = (leftEyeViewport.x + rightEyeViewport.x) / 2;
+      const noseLandmarks = getLandmarkCenter(detection.landmarks.getNose());
+      if (!noseLandmarks) {
+        frameModel.visible = false;
+        hasFrameTarget = false;
 
-      const viewportWidth = Math.max(modalContainer.clientWidth, 1);
-      const eyeLandmarkXs = [...leftEye, ...rightEye].map(
-        (point) =>
-          videoPointToViewport(point, videoWidth, videoHeight).x,
+        return;
+      }
+      const noseCenter = videoPointToViewport(
+        noseLandmarks,
+        videoWidth,
+        videoHeight,
       );
-      const eyeSpan = Math.max(...eyeLandmarkXs) - Math.min(...eyeLandmarkXs);
+      const noseOffsetRatio =
+        (noseCenter.x - eyeMidpointX) / distanceBetweenEyes;
+      const yawOffset = THREE.MathUtils.clamp(
+        noseOffsetRatio * 1.4,
+        -0.75,
+        0.75,
+      );
+      const yawScaleCompensation = Math.max(0.65, Math.cos(yawOffset));
+
       const modelDepth = threeCamera.position.z - worldZ;
       const visibleWorldWidth =
         2 *
@@ -1371,54 +1418,25 @@ document.addEventListener("DOMContentLoaded", async () => {
         threeCamera.aspect;
       const { frameWidthRatio } = getTryOnCalibration();
       const desiredWorldWidth =
-        visibleWorldWidth * (eyeSpan / viewportWidth) * frameWidthRatio;
+        visibleWorldWidth *
+        (eyeSpan / displaySize.width / yawScaleCompensation) *
+        frameWidthRatio;
+      targetFramePosition.y -= desiredWorldWidth * modelVerticalOffsetRatio;
+      const finalModelScale = frameModelNormalizedScale * desiredWorldWidth;
 
-      /* =====================================================
-         MODEL WIDTH
-         ===================================================== */
-
-      /*
-       * Some GLTF models may have their horizontal
-       * dimension represented by X while others can
-       * have a larger Z dimension.
-       *
-       * Use the larger horizontal dimension.
-       */
-
-      const normalizedModelWidth =
-        Math.max(frameModelBaseSize.x || 0, frameModelBaseSize.z || 0) || 1;
-
-      let finalScale = desiredWorldWidth / normalizedModelWidth;
-
-      /* =====================================================
-         SCALE LIMIT
-         ===================================================== */
-
-      /*
-       * Old code capped this at 1.5.
-       *
-       * That could make some frame models
-       * unnecessarily small.
-       *
-       * 3.5 gives enough room for different
-       * GLTF models.
-       */
-
-      finalScale = Math.max(0.1, Math.min(finalScale, 3.5));
-
-      /* =====================================================
-         FINAL SCALE
-         ===================================================== */
-
-      const finalModelScale = frameModelNormalizedScale * finalScale;
-
-      if (Number.isFinite(finalModelScale) && finalModelScale > 0) {
+      if (
+        Number.isFinite(finalModelScale) &&
+        finalModelScale > 0 &&
+        Number.isFinite(targetFramePosition.x + targetFramePosition.y)
+      ) {
         targetFrameScale = finalModelScale;
       }
+      targetFrameYaw = yawOffset;
 
       if (!hasFrameTarget) {
         frameModel.position.copy(targetFramePosition);
         frameModel.rotation.z = targetFrameRoll;
+        frameModel.rotation.y = targetFrameYaw;
         frameModel.scale.setScalar(targetFrameScale);
         hasFrameTarget = true;
       }
@@ -1439,6 +1457,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         frameModel.visible = false;
       }
       hasFrameTarget = false;
+      missedFaceDetections = 0;
 
       setVTOStatus("Face detection error");
     } finally {

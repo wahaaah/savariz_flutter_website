@@ -27,7 +27,7 @@ class BookingPage extends StatefulWidget {
   final bool focusMyAppointments;
 
   @override
-   State<BookingPage> createState() => _BookingPageState();
+  State<BookingPage> createState() => _BookingPageState();
 }
 
 class _BookingPageState extends State<BookingPage> {
@@ -325,21 +325,21 @@ class _BookingPageState extends State<BookingPage> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final appointmentCount = _appointments.length;
-            final summary = '$appointmentCount appointment'
+            final summary =
+                '$appointmentCount appointment'
                 '${appointmentCount == 1 ? '' : 's'} · '
                 'requests and previous visits';
             final title = Text(
               'My appointments',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800),
             );
             final subtitle = Text(
               summary,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(
-                  context,
-                ).extension<PatientPortalTextColors>()!.secondary,
+                color: Theme.of(context)
+                    .extension<PatientPortalTextColors>()!
+                    .secondary,
               ),
             );
             final action = FilledButton.icon(
@@ -362,10 +362,7 @@ class _BookingPageState extends State<BookingPage> {
             }
             return Row(
               children: [
-                const Icon(
-                  Icons.view_list_outlined,
-                  color: Color(0xFF2563EB),
-                ),
+                const Icon(Icons.view_list_outlined, color: Color(0xFF2563EB)),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -1333,40 +1330,48 @@ class _DetailsCard extends StatelessWidget {
                     ),
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Appointment Terms & Conditions',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                  child: ExpansionTile(
+                    key: const ValueKey('appointment-terms-toggle'),
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Appointment Terms & Conditions',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '1. Select an available date from today through the '
-                        'next 12 months. Past dates, Sundays, and clinic '
-                        'closure dates cannot be booked.\n'
-                        '2. Choose an available time slot. Slots are offered '
-                        'in 30-minute intervals from 8:00 AM to 5:30 PM. '
-                        'Availability can change; if a slot is taken before '
-                        'your request is submitted, select another available '
-                        'time.\n'
-                        '3. Choose the purpose that best matches your visit: '
-                        'Eye Examination, Follow-up, Frame / Eyewear, Contact '
-                        'Lens. Review the selected date, time, and purpose '
-                        'before submitting.\n'
-                        '4. Submitting creates an appointment request, not a '
-                        'confirmed appointment. The clinic must approve the '
-                        'request before it is confirmed.\n'
-                        '5. You can cancel an eligible upcoming appointment '
-                        'from My Appointments. Cancellation cannot be undone. '
-                        'To request a different time, cancel the existing '
-                        'appointment if eligible, then submit a new request '
-                        'for an available slot.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: secondary,
-                          height: 1.45,
+                    ),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '1. Select an available date from today through the '
+                          'next 12 months. Past dates, Sundays, and clinic '
+                          'closure dates cannot be booked.\n'
+                          '2. Choose an available time slot. Slots are offered '
+                          'in 30-minute intervals from 8:00 AM to 5:30 PM. '
+                          'Availability can change; if a slot is taken before '
+                          'your request is submitted, select another available '
+                          'time.\n'
+                          '3. Choose the purpose that best matches your visit: '
+                          'Eye Examination, Follow-up, Frame / Eyewear, Contact '
+                          'Lens. Review the selected date, time, and purpose '
+                          'before submitting.\n'
+                          '4. Submitting creates an appointment request, not a '
+                          'confirmed appointment. The clinic must approve the '
+                          'request before it is confirmed.\n'
+                          '5. Please arrive 10 to 15 minutes before your '
+                          'scheduled appointment for check-in. Late arrivals '
+                          'may be delayed or rescheduled depending on clinic '
+                          'availability.\n'
+                          '6. You can cancel an eligible upcoming appointment '
+                          'from My Appointments. Cancellation cannot be '
+                          'undone. To request a different time, cancel the '
+                          'existing appointment if eligible, then submit a '
+                          'new request for an available slot.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: secondary,
+                            height: 1.45,
+                          ),
                         ),
                       ),
                     ],
