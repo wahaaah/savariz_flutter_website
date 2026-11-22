@@ -1393,7 +1393,6 @@ class _NewTicketDialogState extends State<_NewTicketDialog> {
   final _subjectController = TextEditingController();
   final _descriptionController = TextEditingController();
   String? _category;
-  String _priority = 'Medium';
 
   @override
   void dispose() {
@@ -1408,7 +1407,7 @@ class _NewTicketDialogState extends State<_NewTicketDialog> {
       _NewTicketDraft(
         category: _category!,
         subject: _subjectController.text.trim(),
-        priority: _priority,
+        priority: SupportTicketOptions.priorityForCategory(_category),
         description: _descriptionController.text.trim(),
       ),
     );
@@ -1418,6 +1417,14 @@ class _NewTicketDialogState extends State<_NewTicketDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final secondary = theme.extension<PatientPortalTextColors>()!.secondary;
+    final priority = SupportTicketOptions.priorityForCategory(_category);
+    final priorityColor = priority == 'Urgent'
+        ? Colors.red
+        : priority == 'High'
+        ? Colors.deepOrange
+        : priority == 'Low'
+        ? Colors.green
+        : Colors.blue;
     final viewport = MediaQuery.sizeOf(context);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -1528,28 +1535,44 @@ class _NewTicketDialogState extends State<_NewTicketDialog> {
                             : null,
                       ),
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: _priority,
+                      InputDecorator(
                         decoration: const InputDecoration(
-                          labelText: 'Priority',
+                          labelText: 'Priority (automatic)',
                           floatingLabelBehavior: FloatingLabelBehavior.always,
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 12,
                           ),
                         ),
-                        items: SupportTicketOptions.priorities
-                            .map(
-                              (priority) => DropdownMenuItem(
-                                value: priority,
-                                child: Text(priority),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
                               ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value != null) setState(() => _priority = value);
-                        },
+                              decoration: BoxDecoration(
+                                color: priorityColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                priority,
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: priorityColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              'Assigned based on the selected category.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: secondary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
@@ -1625,7 +1648,9 @@ bool _canSendMessage(SupportTicket ticket) {
 
 bool _isReadOnly(String status) {
   final normalized = status.toLowerCase();
-  return normalized == 'resolved' || normalized == 'closed';
+  return normalized == 'resolved' ||
+      normalized == 'closed' ||
+      normalized == 'expired';
 }
 
 String _conversationSubtitle(SupportTicket? ticket) {

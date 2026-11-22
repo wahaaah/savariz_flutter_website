@@ -4,18 +4,12 @@ class SupportMessage {
     required this.senderName,
     required this.sentAt,
     required this.isMine,
-    this.attachmentUrl,
-    this.attachmentName,
-    this.attachmentMimeType,
   });
 
   final String body;
   final String senderName;
   final DateTime? sentAt;
   final bool isMine;
-  final String? attachmentUrl;
-  final String? attachmentName;
-  final String? attachmentMimeType;
 
   factory SupportMessage.fromJson(
     Map<String, dynamic> json, {
@@ -34,9 +28,6 @@ class SupportMessage {
           (isMine ? 'You' : 'Clinic Support'),
       sentAt: _dateValue(json, const ['created_at', 'createdAt', 'sent_at']),
       isMine: isMine,
-      attachmentUrl: _stringValue(json, const ['attachment_url']),
-      attachmentName: _stringValue(json, const ['attachment_name']),
-      attachmentMimeType: _stringValue(json, const ['attachment_mime_type']),
     );
   }
 }
@@ -134,7 +125,18 @@ abstract final class SupportTicketOptions {
     'Other',
   ];
 
-  static const priorities = ['Low', 'Medium', 'High', 'Urgent'];
+  static const _priorityByCategory = {
+    'Appointment': 'Medium',
+    'Billing / Payment': 'Medium',
+    'Patient Account': 'Urgent',
+    'Eyewear / Frames': 'Medium',
+    'Website / Technical Issue': 'High',
+    'General Inquiry': 'Low',
+    'Other': 'Medium',
+  };
+
+  static String priorityForCategory(String? category) =>
+      _priorityByCategory[category] ?? 'Medium';
 }
 
 String? _stringValue(Map<String, dynamic> json, List<String> keys) {
