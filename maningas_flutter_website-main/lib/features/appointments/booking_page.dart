@@ -241,6 +241,7 @@ class _BookingPageState extends State<BookingPage> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
+    final upcomingAppointment = _findUpcomingAppointment();
     final compact = width <= PatientPortalBreakpoints.mobileNavigation;
     final horizontalPadding = width <= 360
         ? 8.0
@@ -277,14 +278,22 @@ class _BookingPageState extends State<BookingPage> {
                       : () => _refreshAppointments(force: true),
                 ),
               if (_loadError != null || _isLoading) const SizedBox(height: 18),
-              if (_actionMessage != null)
+              if (upcomingAppointment != null)
+                _BookingStatusNotice(
+                  message: _upcomingAppointmentMessage(upcomingAppointment),
+                  isError: true,
+                  isLoading: false,
+                  onRetry: null,
+                )
+              else if (_actionMessage != null)
                 _BookingStatusNotice(
                   message: _actionMessage!,
                   isError: _actionIsError,
                   isLoading: false,
                   onRetry: null,
                 ),
-              if (_actionMessage != null) const SizedBox(height: 18),
+              if (upcomingAppointment != null || _actionMessage != null)
+                const SizedBox(height: 18),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final calendar = _CalendarCard(
@@ -304,6 +313,7 @@ class _BookingPageState extends State<BookingPage> {
                     slots: _slots,
                     selectedTime: _selectedTime,
                     purpose: _purpose,
+                    hasUpcomingAppointment: upcomingAppointment != null,
                     now: _now,
                     schedule: _schedule,
                     onTimeSelected: (time) {
@@ -375,6 +385,7 @@ class _BookingPageState extends State<BookingPage> {
 
   bool _isDateUnavailable(DateTime date) {
     if (!_scheduleLoaded ||
+        _findUpcomingAppointment() != null ||
         date.isBefore(_today) ||
         date.isAfter(_maxDate) ||
         date.weekday == DateTime.sunday ||
@@ -390,6 +401,38 @@ class _BookingPageState extends State<BookingPage> {
           _slotBooked(_schedule, date, time, duration) ||
           _slotClosed(_schedule, date, time, duration),
     );
+  }
+
+  AppointmentHistoryRecord? _findUpcomingAppointment() {
+    const releasedStatuses = {
+      'cancelled',
+      'canceled',
+      'rejected',
+      'declined',
+      'completed',
+    };
+    for (final appointment in _appointments) {
+      final scheduledAt = appointment.scheduledAt;
+      final status = (appointment.status ?? '').trim().toLowerCase();
+      if (scheduledAt != null &&
+          scheduledAt.isAfter(_now) &&
+          !releasedStatuses.contains(status)) {
+        return appointment;
+      }
+    }
+    return null;
+  }
+
+  String _upcomingAppointmentMessage(AppointmentHistoryRecord appointment) {
+    final date = appointment.date;
+    final time = appointment.time;
+    if (date == null || time == null) {
+      return 'You already have an upcoming appointment. Please complete or '
+          'cancel it before booking another one.';
+    }
+    return 'You already have an upcoming appointment on '
+        '${_formatLongDate(date)} at ${_formatTime(time)}. Please complete or '
+        'cancel your current appointment before booking another one.';
   }
 
   void _showConfirmation() {
@@ -430,9 +473,17 @@ class _BookingPageState extends State<BookingPage> {
     final time = _selectedTime;
     final purpose = _purpose;
     final duration = _serviceDuration(_schedule, purpose);
+    final upcomingAppointment = _findUpcomingAppointment();
     if (session == null || repository == null) {
       _showActionMessage(
         'Your patient session could not be found. Please sign in again.',
+        isError: true,
+      );
+      return;
+    }
+    if (upcomingAppointment != null) {
+      _showActionMessage(
+        _upcomingAppointmentMessage(upcomingAppointment),
         isError: true,
       );
       return;
@@ -1001,6 +1052,7 @@ class _DetailsCard extends StatelessWidget {
     required this.slots,
     required this.selectedTime,
     required this.purpose,
+    required this.hasUpcomingAppointment,
     required this.now,
     required this.schedule,
     required this.onTimeSelected,
@@ -1014,6 +1066,7 @@ class _DetailsCard extends StatelessWidget {
   final List<String> slots;
   final String? selectedTime;
   final String? purpose;
+  final bool hasUpcomingAppointment;
   final DateTime now;
   final BookingSchedule schedule;
   final ValueChanged<String> onTimeSelected;
@@ -1049,7 +1102,8 @@ class _DetailsCard extends StatelessWidget {
     final availableSlots = selected == null
         ? <String>[]
         : slots.where((time) {
-            return !_slotPast(selected, time, now) &&
+            return !hasUpcomingAppointment &&
+                !_slotPast(selected, time, now) &&
                 duration != null &&
                 _isServiceStartAligned(time, duration) &&
                 _endTime(time, duration) != null &&
@@ -1146,7 +1200,7 @@ class _DetailsCard extends StatelessWidget {
                     Text(
                       purpose == null
                           ? 'Select a service first'
-                          : '$duration-minute appointment · starts every $duration minutes',
+                          : '$duration-minute appointment · starts every 30 minutes',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: secondary,
                       ),
@@ -1168,6 +1222,10 @@ class _DetailsCard extends StatelessWidget {
                 else if (purpose == null)
                   const _EmptySlots(
                     message: 'Select a service to see available times.',
+                  )
+                else if (hasUpcomingAppointment)
+                  const _EmptySlots(
+                    message: 'Complete or cancel your upcoming appointment before booking another one.',
                   )
                 else if (availableSlots.isEmpty)
                   const _EmptySlots(
@@ -1215,6 +1273,7 @@ class _DetailsCard extends StatelessWidget {
                               selectedDuration == null ||
                               _endTime(time, selectedDuration) == null;
                           final unavailable =
+                              hasUpcomingAppointment ||
                               past ||
                               booked ||
                               closed ||
@@ -1338,6 +1397,7 @@ class _DetailsCard extends StatelessWidget {
                     onPressed:
                         !isLoading &&
                             !isSubmitting &&
+                            !hasUpcomingAppointment &&
                             selected != null &&
                             selectedTime != null &&
                             purpose != null
@@ -1509,7 +1569,7 @@ bool _isServiceStartAligned(String time, int durationMinutes) {
   final timeMinutes = _timeMinutes(time);
   return timeMinutes != null &&
       durationMinutes > 0 &&
-      (timeMinutes - 8 * 60) % durationMinutes == 0;
+      (timeMinutes - 8 * 60) % 30 == 0;
 }
 
 String? _endTime(String startTime, int durationMinutes) {
@@ -1564,7 +1624,7 @@ bool _slotBooked(
         ? bookingEnd - bookingStart
         : serviceDuration ?? 30;
     if (bookingStart == null || bookingDuration <= 0) return true;
-    final occupiedEnd = bookingStart + bookingDuration;
+    final occupiedEnd = bookingStart + bookingDuration + 30;
     return requestedStart < occupiedEnd && requestedEnd > bookingStart;
   });
 }
