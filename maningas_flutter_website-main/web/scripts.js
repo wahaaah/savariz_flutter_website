@@ -32,6 +32,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const faceFilterModal = document.getElementById("faceFilterModal");
   const modalContainer = document.getElementById("modal-container");
   const closeVTOBtn = document.getElementById("closeVTOBtn");
+  const tryOnScaleInput = document.getElementById("vto-scale");
+  const tryOnScaleValue = document.getElementById("vto-scale-value");
+  const tryOnCaptureButton = document.getElementById("vto-capture-btn");
+  const tryOnCaptureStatus = document.getElementById("vto-capture-status");
   const vtoStatus = document.getElementById("vto-status");
 
   /* =========================================================
@@ -68,6 +72,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   let targetFrameRoll = 0;
   let targetFrameYaw = Math.PI;
   let targetFrameScale = 1;
+  let autoTargetFrameScale = 1;
+  let manualTryOnScale = 1;
   let lastFrameRenderTimestamp = 0;
 
   let frameModelNormalizedScale = 1;
@@ -209,6 +215,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   function setVTOStatus(message) {
     if (vtoStatus) {
       vtoStatus.textContent = message;
+    }
+    if (tryOnCaptureButton) {
+      tryOnCaptureButton.disabled = !/face detected/i.test(message);
     }
   }
 
@@ -638,7 +647,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     threeRenderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
-      preserveDrawingBuffer: false,
+      preserveDrawingBuffer: true,
     });
 
     threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -740,6 +749,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   window.addEventListener("resize", resizeThreeRenderer);
+  if (modalContainer && "ResizeObserver" in window) {
+    new ResizeObserver(resizeThreeRenderer).observe(modalContainer);
+  }
 
   /* =========================================================
      THREE.JS ANIMATION
@@ -1101,6 +1113,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
+      manualTryOnScale = 1;
+      autoTargetFrameScale = 1;
+      if (tryOnScaleInput) tryOnScaleInput.value = "100";
+      if (tryOnScaleValue) tryOnScaleValue.textContent = "100%";
+      if (tryOnCaptureStatus) tryOnCaptureStatus.textContent = "";
+
       setVTOStatus("Loading 3D frame...");
 
       threeLoader.load(
@@ -1422,7 +1440,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         (eyeSpan / displaySize.width / yawScaleCompensation) *
         frameWidthRatio;
       targetFramePosition.y -= desiredWorldWidth * modelVerticalOffsetRatio;
-      const finalModelScale = frameModelNormalizedScale * desiredWorldWidth;
+      autoTargetFrameScale =
+        frameModelNormalizedScale * desiredWorldWidth;
+      const finalModelScale = autoTargetFrameScale * manualTryOnScale;
 
       if (
         Number.isFinite(finalModelScale) &&
@@ -1649,6 +1669,70 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (closeVTOBtn) {
     closeVTOBtn.addEventListener("click", closeVirtualTryOn);
+  }
+
+  function captureTryOnPhoto() {
+    if (!frameModel || !frameModel.visible || !hasFrameTarget) {
+      if (tryOnCaptureStatus) {
+        tryOnCaptureStatus.textContent =
+          "Center your face until the frame appears.";
+      }
+      return;
+    }
+
+    const source = threeRenderer?.domElement;
+    if (!source || !source.width || !source.height) {
+      if (tryOnCaptureStatus) {
+        tryOnCaptureStatus.textContent = "The Try-On preview is not ready yet.";
+      }
+      return;
+    }
+
+    try {
+      const photo = document.createElement("canvas");
+      photo.width = source.width;
+      photo.height = source.height;
+      const context = photo.getContext("2d");
+      if (!context) throw new Error("Unable to prepare the photo.");
+
+      context.translate(photo.width, 0);
+      context.scale(-1, 1);
+      context.drawImage(source, 0, 0);
+
+      const link = document.createElement("a");
+      link.download = `gonzales-vision-try-on-${Date.now()}.jpg`;
+      link.href = photo.toDataURL("image/jpeg", 0.92);
+      link.click();
+      if (tryOnCaptureStatus) {
+        tryOnCaptureStatus.textContent = "Photo downloaded to your device.";
+      }
+    } catch (error) {
+      console.error("Try-On photo capture failed:", error);
+      if (tryOnCaptureStatus) {
+        tryOnCaptureStatus.textContent =
+          error instanceof Error
+            ? error.message
+            : "Unable to capture the Try-On photo.";
+      }
+    }
+  }
+
+  if (tryOnScaleInput) {
+    tryOnScaleInput.addEventListener("input", () => {
+      const percent = Number(tryOnScaleInput.value);
+      manualTryOnScale = Math.min(1.3, Math.max(0.7, percent / 100));
+      if (tryOnScaleValue) {
+        tryOnScaleValue.textContent = `${Math.round(manualTryOnScale * 100)}%`;
+      }
+      targetFrameScale = autoTargetFrameScale * manualTryOnScale;
+      if (frameModel && hasFrameTarget) {
+        frameModel.scale.setScalar(targetFrameScale);
+      }
+    });
+  }
+
+  if (tryOnCaptureButton) {
+    tryOnCaptureButton.addEventListener("click", captureTryOnPhoto);
   }
 
   /* =========================================================

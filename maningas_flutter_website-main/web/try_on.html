@@ -29,9 +29,36 @@
         color: white; font: 500 14px/1.5 system-ui, sans-serif;
         text-shadow: 0 1px 5px #000;
       }
+      #vto-controls {
+        position: absolute; z-index: 5; right: 12px; bottom: 12px; left: 12px;
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px;
+        align-items: center; padding: 12px; border-radius: 12px;
+        background: #0f172acc; color: white;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      }
+      #vto-scale-control {
+        min-width: 0; display: flex; align-items: center; gap: 10px;
+        font: 600 13px/1.3 system-ui, sans-serif;
+      }
+      #vto-scale { min-width: 0; flex: 1; accent-color: #3b82f6; touch-action: pan-y; }
+      #vto-scale-value { width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+      #vto-capture-btn {
+        min-height: 44px; padding: 0 16px; border: 0; border-radius: 9px;
+        background: #2563eb; color: white; font: 700 14px system-ui, sans-serif;
+      }
+      #vto-capture-btn:disabled { background: #64748b; cursor: not-allowed; }
+      #vto-capture-status {
+        grid-column: 1 / -1; min-height: 1em; color: #e2e8f0;
+        font: 12px/1.4 system-ui, sans-serif;
+      }
+      @media (max-width: 600px) {
+        #vto-controls { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+        #vto-capture-btn { width: 100%; }
+        #vto-status { top: calc(12px + env(safe-area-inset-top)); left: 14px; right: 62px; font-size: 12px; }
+      }
       @media (max-width: 600px) {
         #faceFilterModal { padding: 0; }
-        .vto-dialog { width: 100%; height: 100%; border-radius: 0; }
+        .vto-dialog { width: 100%; height: 100dvh; border-radius: 0; }
       }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -45,6 +72,15 @@
         <button id="closeVTOBtn" type="button" aria-label="Close Try-On">×</button>
         <div id="modal-container"></div>
         <div id="vto-status">Preparing virtual try-on...</div>
+        <div id="vto-controls">
+          <label id="vto-scale-control" for="vto-scale">
+            <span>Frame size</span>
+            <input id="vto-scale" type="range" min="70" max="130" step="1" value="100" />
+            <output id="vto-scale-value" for="vto-scale">100%</output>
+          </label>
+          <button id="vto-capture-btn" type="button" disabled>Take photo</button>
+          <span id="vto-capture-status" role="status" aria-live="polite"></span>
+        </div>
       </div>
     </div>
   </body>
