@@ -39,6 +39,7 @@ class TransactionRecord {
     this.discountName,
     this.discountPercent,
     this.discountAmount,
+    this.discountIdProofUrl,
   });
 
   factory TransactionRecord.fromJson(Map<String, dynamic> json) {
@@ -92,6 +93,9 @@ class TransactionRecord {
       discountAmount: _optionalDouble(
         json['discount_amount'] ?? json['discount'],
       ),
+      discountIdProofUrl: _optionalString(
+        json['discount_id_proof_url'] ?? json['id_proof_url'],
+      ),
       vat: _optionalDouble(json['vat_amount'] ?? json['vat']),
       total: _optionalDouble(
         json['total_amount'] ?? json['amount'] ?? json['total'],
@@ -110,6 +114,7 @@ class TransactionRecord {
   final double? discountAmount;
   final double? discountPercent;
   final String? discountName;
+  final String? discountIdProofUrl;
   final double? vat;
   final double? total;
   final String status;

@@ -163,8 +163,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }
 
   void _refreshTransactions() {
-    if (widget.transactions != null ||
-        widget.presentationState != null) {
+    if (widget.transactions != null || widget.presentationState != null) {
       return;
     }
     if (_requestInProgress) {
@@ -186,9 +185,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   Future<void> _fetchTransactions(
     TransactionHistoryRepository repository,
     PatientSession session,
-    int generation,
-    {required int page, bool silent = false}
-  ) async {
+    int generation, {
+    required int page,
+    bool silent = false,
+  }) async {
     _requestInProgress = true;
     if (mounted) {
       setState(() {
@@ -262,12 +262,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     final session = _controller?.currentSession;
     if (repository == null || session == null) return;
     setState(() => _currentPage = page);
-    _fetchTransactions(
-      repository,
-      session,
-      ++_loadGeneration,
-      page: page,
-    );
+    _fetchTransactions(repository, session, ++_loadGeneration, page: page);
   }
 
   List<TransactionRecord> get _sortedTransactions {
@@ -303,10 +298,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         ? 1
         : _currentPage.clamp(1, pageCount).toInt();
     final pageTransactions = externalTransactions
-        ? transactions
-              .skip((safePage - 1) * _pageSize)
-              .take(_pageSize)
-              .toList()
+        ? transactions.skip((safePage - 1) * _pageSize).take(_pageSize).toList()
         : transactions;
 
     if (safePage != _currentPage) {
@@ -330,9 +322,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _PageHeader(
-                compact: compact,
-              ),
+              _PageHeader(compact: compact),
               const SizedBox(height: 24),
               _BillingRecordsCard(
                 transactions: pageTransactions,
@@ -578,9 +568,13 @@ class _TransactionPagination extends StatelessWidget {
     final end = (page * pageSize).clamp(0, totalItems).toInt();
     final pageNumbers = totalPages <= 5
         ? List<int>.generate(totalPages, (index) => index + 1)
-        : (<int>{1, page - 1, page, page + 1, totalPages}
-              .where((number) => number >= 1 && number <= totalPages)
-              .toList()
+        : (<int>{
+              1,
+              page - 1,
+              page,
+              page + 1,
+              totalPages,
+            }.where((number) => number >= 1 && number <= totalPages).toList()
             ..sort());
 
     return Container(
@@ -760,6 +754,62 @@ class _TransactionCard extends StatelessWidget {
   final TransactionRecord transaction;
   final bool compact;
 
+  void _openProofImage(BuildContext context, TransactionRecord transaction) {
+    final url = transaction.discountIdProofUrl;
+    if (url == null || url.isEmpty) return;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return Dialog(
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Senior/PWD ID proof',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: theme.colorScheme.outline),
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) =>
+                          const Center(child: Text('ID picture unavailable')),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -903,6 +953,51 @@ class _TransactionCard extends StatelessWidget {
             value: _formatCurrency(transaction.total),
             total: true,
           ),
+          if (transaction.discountIdProofUrl != null &&
+              transaction.discountIdProofUrl!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Divider(height: 1, color: theme.colorScheme.outline),
+            const SizedBox(height: 12),
+            Text(
+              'SENIOR/PWD ID PROOF',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Semantics(
+              label: 'Open uploaded Senior or PWD ID picture',
+              button: true,
+              child: InkWell(
+                onTap: () => _openProofImage(context, transaction),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  height: 150,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    border: Border.all(color: theme.colorScheme.outline),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.network(
+                    transaction.discountIdProofUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Center(
+                      child: Text(
+                        'ID picture unavailable',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: secondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
