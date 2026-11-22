@@ -9,6 +9,14 @@ abstract interface class AppointmentHistoryRepository {
     required String token,
   });
 
+  Future<AppointmentHistoryPageResult> getAppointmentPage({
+    required String patientId,
+    required String token,
+    required int page,
+    required int limit,
+    required String filter,
+  });
+
   Future<BookingSchedule> getBookingSchedule({required String token});
 
   Future<String> createAppointment({
@@ -24,6 +32,18 @@ abstract interface class AppointmentHistoryRepository {
     required String token,
     required String appointmentId,
   });
+}
+
+class AppointmentHistoryPageResult {
+  const AppointmentHistoryPageResult({
+    required this.items,
+    required this.total,
+    required this.totalPages,
+  });
+
+  final List<AppointmentHistoryRecord> items;
+  final int total;
+  final int totalPages;
 }
 
 class ApiAppointmentHistoryRepository implements AppointmentHistoryRepository {
@@ -43,8 +63,7 @@ class ApiAppointmentHistoryRepository implements AppointmentHistoryRepository {
       );
       final rows = switch (response) {
         List<Object?> values => values,
-        Map<String, dynamic> body
-            when body['appointments'] is List<Object?> =>
+        Map<String, dynamic> body when body['appointments'] is List<Object?> =>
           body['appointments'] as List<Object?>,
         Map<String, dynamic> body when body['data'] is List<Object?> =>
           body['data'] as List<Object?>,
@@ -79,62 +98,140 @@ class ApiAppointmentHistoryRepository implements AppointmentHistoryRepository {
   }
 
   @override
+  Future<AppointmentHistoryPageResult> getAppointmentPage({
+    required String patientId,
+    required String token,
+    required int page,
+    required int limit,
+    required String filter,
+  }) async {
+    try {
+      final response = await _apiClient.getJson(
+        '/api/appointments/patient/${Uri.encodeComponent(patientId)}'
+        '?page=$page&limit=$limit&filter=${Uri.encodeQueryComponent(filter)}',
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      final values = response['items'];
+      final pagination = response['pagination'];
+      if (values is! List || pagination is! Map<String, dynamic>) {
+        throw const FormatException('Invalid appointment page response.');
+      }
+
+      final records = <AppointmentHistoryRecord>[];
+      for (final row in values) {
+        if (row is! Map<String, dynamic>) {
+          throw const FormatException('Invalid appointment record.');
+        }
+        records.add(PatientAppointment.fromJson(row));
+      }
+
+      final total = _parseInteger(pagination['total']);
+      final totalPages = _parseInteger(pagination['totalPages']);
+      if (total == null || totalPages == null) {
+        throw const FormatException('Invalid appointment page metadata.');
+      }
+      return AppointmentHistoryPageResult(
+        items: records,
+        total: total,
+        totalPages: totalPages,
+      );
+    } on FormatException {
+      throw const ApiFailure(
+        kind: ApiFailureKind.invalidResponse,
+        message: 'The clinic service returned invalid appointment history.',
+      );
+    } on ApiFailure catch (failure) {
+      throw _appointmentFailure(failure);
+    }
+  }
+
+  @override
   Future<BookingSchedule> getBookingSchedule({required String token}) async {
     try {
+      final today = DateTime.now();
+      final rangeStart = DateTime(today.year, today.month, today.day);
+      final rangeEnd = rangeStart.add(const Duration(days: 365));
       final responses = await Future.wait<Object>([
         _apiClient.getJsonMapOrList(
-          '/api/appointments',
+          '/api/appointments?from=${_dateString(rangeStart)}'
+          '&to=${_dateString(rangeEnd)}',
           headers: _authHeaders(token),
         ),
         _apiClient.getJsonMapOrList(
           '/api/clinic-closures',
           headers: _authHeaders(token),
         ),
+        _getOptionalServices(token),
       ]);
-      final bookings = _responseRows(
-        responses[0],
-        const ['appointments', 'data'],
-      ).map((row) {
-        if (row is! Map<String, dynamic>) {
-          throw const FormatException('Invalid appointment availability row.');
-        }
-        final appointment = PatientAppointment.fromJson(row);
-        final date = appointment.date;
-        final time = appointment.time;
-        if (date == null || time == null) {
-          throw const FormatException(
-            'Appointment availability is missing date or time.',
-          );
-        }
-        return AppointmentBooking(
-          appointmentDate: date,
-          appointmentTime: time,
-          status: appointment.status,
-        );
-      }).toList(growable: false);
-      final closures = _responseRows(
-        responses[1],
-        const ['closures', 'data'],
-      ).map((row) {
-        if (row is! Map<String, dynamic>) {
-          throw const FormatException('Invalid clinic closure row.');
-        }
-        final start = _dateValue(row['start_date']);
-        final end = _dateValue(row['end_date']);
-        if (start == null || end == null || end.isBefore(start)) {
-          throw const FormatException('Invalid clinic closure date range.');
-        }
-        return ClinicClosure(
-          startDate: start,
-          endDate: end,
-          reason: _firstString(row, const [
-            'reason',
-            'closure_reason',
-            'description',
-          ]),
-        );
-      }).toList(growable: false);
-      return BookingSchedule(bookings: bookings, closures: closures);
+      final bookings =
+          _responseRows(responses[0], const ['appointments', 'data'])
+              .map((row) {
+                if (row is! Map<String, dynamic>) {
+                  throw const FormatException(
+                    'Invalid appointment availability row.',
+                  );
+                }
+                final appointment = PatientAppointment.fromJson(row);
+                final date = appointment.date;
+                final time = appointment.time;
+                if (date == null || time == null) {
+                  throw const FormatException(
+                    'Appointment availability is missing date or time.',
+                  );
+                }
+                return AppointmentBooking(
+                  appointmentDate: date,
+                  appointmentTime: time,
+                  appointmentEndTime: appointment.endTime,
+                  purpose: appointment.purpose,
+                  status: appointment.status,
+                );
+              })
+              .toList(growable: false);
+      final closures = _responseRows(responses[1], const ['closures', 'data'])
+          .map((row) {
+            if (row is! Map<String, dynamic>) {
+              throw const FormatException('Invalid clinic closure row.');
+            }
+            final start = _dateValue(row['start_date']);
+            final end = _dateValue(row['end_date']);
+            if (start == null || end == null || end.isBefore(start)) {
+              throw const FormatException('Invalid clinic closure date range.');
+            }
+            return ClinicClosure(
+              startDate: start,
+              endDate: end,
+              reason: _firstString(row, const [
+                'reason',
+                'closure_reason',
+                'description',
+              ]),
+              startTime: _optionalTime(row['start_time']),
+              endTime: _optionalTime(row['end_time']),
+            );
+          })
+          .toList(growable: false);
+      final services = _responseRows(responses[2], const ['services'])
+          .map((row) {
+            if (row is! Map<String, dynamic>) {
+              throw const FormatException('Invalid appointment service row.');
+            }
+            final name = _firstString(row, const ['name']);
+            final duration = _parseInteger(row['duration_minutes']);
+            if (name.isEmpty || duration == null || duration <= 0) {
+              throw const FormatException('Invalid appointment service.');
+            }
+            return AppointmentServiceOption(
+              name: name,
+              durationMinutes: duration,
+            );
+          })
+          .toList(growable: false);
+      return BookingSchedule(
+        bookings: bookings,
+        closures: closures,
+        services: services,
+      );
     } on FormatException {
       throw const ApiFailure(
         kind: ApiFailureKind.invalidResponse,
@@ -169,18 +266,15 @@ class ApiAppointmentHistoryRepository implements AppointmentHistoryRepository {
       if (response['success'] == false) {
         throw ApiFailure(
           kind: ApiFailureKind.http,
-          message: _firstString(
-            response,
-            const ['error', 'message'],
-            fallback: 'Unable to book appointment.',
-          ),
+          message: _firstString(response, const [
+            'error',
+            'message',
+          ], fallback: 'Unable to book appointment.'),
         );
       }
-      return _firstString(
-        response,
-        const ['message'],
-        fallback: 'Appointment request submitted successfully.',
-      );
+      return _firstString(response, const [
+        'message',
+      ], fallback: 'Appointment request submitted successfully.');
     } on ApiFailure catch (failure) {
       throw _appointmentFailure(failure);
     }
@@ -201,18 +295,15 @@ class ApiAppointmentHistoryRepository implements AppointmentHistoryRepository {
       if (response['success'] == false) {
         throw ApiFailure(
           kind: ApiFailureKind.http,
-          message: _firstString(
-            response,
-            const ['error', 'message'],
-            fallback: 'Unable to cancel appointment.',
-          ),
+          message: _firstString(response, const [
+            'error',
+            'message',
+          ], fallback: 'Unable to cancel appointment.'),
         );
       }
-      return _firstString(
-        response,
-        const ['message'],
-        fallback: 'Your appointment has been cancelled successfully.',
-      );
+      return _firstString(response, const [
+        'message',
+      ], fallback: 'Your appointment has been cancelled successfully.');
     } on ApiFailure catch (failure) {
       throw _appointmentFailure(failure);
     }
@@ -234,6 +325,45 @@ class ApiAppointmentHistoryRepository implements AppointmentHistoryRepository {
       );
     }
     return failure;
+  }
+
+  Future<Object> _getOptionalServices(String token) async {
+    try {
+      return await _apiClient.getJsonMapOrList(
+        '/api/appointments/services',
+        headers: _authHeaders(token),
+      );
+    } on ApiFailure catch (failure) {
+      if (failure.statusCode == 404) {
+        return const <Object?>[];
+      }
+      rethrow;
+    }
+  }
+
+  int? _parseInteger(Object? value) {
+    if (value is int && value >= 0) return value;
+    if (value is num && value >= 0 && value == value.toInt()) {
+      return value.toInt();
+    }
+    return null;
+  }
+
+  String? _optionalTime(Object? value) {
+    if (value == null || value is String && value.trim().isEmpty) return null;
+    if (value is! String) {
+      throw const FormatException('Invalid clinic closure time.');
+    }
+    final match = RegExp(r'^(\d{2}):(\d{2})(?::\d{2})?$').firstMatch(value);
+    if (match == null) {
+      throw const FormatException('Invalid clinic closure time.');
+    }
+    final hours = int.parse(match.group(1)!);
+    final minutes = int.parse(match.group(2)!);
+    if (hours > 23 || minutes > 59) {
+      throw const FormatException('Invalid clinic closure time.');
+    }
+    return '${match.group(1)}:${match.group(2)}';
   }
 }
 

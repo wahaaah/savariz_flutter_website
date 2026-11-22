@@ -6,6 +6,7 @@ import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/config/api_config.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_scope.dart';
 import 'catalog_frame.dart';
 import 'frames_catalog_repository.dart';
@@ -25,58 +26,35 @@ class _FramesCatalogPageState extends State<FramesCatalogPage> {
   String _sort = 'newest';
   String _availability = 'all';
   String _category = 'All';
+  int _currentPage = 1;
+  int _totalFrames = 0;
+  int _totalPages = 1;
+  List<String> _availableCategories = const [];
   FramesCatalogRepository? _repository;
   List<CatalogFrame> _allFrames = const [];
   bool _isLoading = true;
   bool _hasError = false;
   bool _repositoryInitialized = false;
-  bool _isFetching = false;
+  int _fetchGeneration = 0;
   String? _refreshError;
-  Timer? _refreshTimer;
+  void Function()? _framesListenerCleanup;
+  void Function()? _connectionListenerCleanup;
+  Timer? _searchDebounceTimer;
 
-  List<String> get _categories {
-    final categories =
-        _allFrames
-            .map((frame) => frame.category)
-            .whereType<String>()
-            .toSet()
-            .toList()
-          ..sort((a, b) => a.compareTo(b));
-    return ['All', ...categories];
-  }
+  List<String> get _categories => ['All', ..._availableCategories];
 
-  List<CatalogFrame> get _visibleFrames {
-    final query = _searchController.text.trim().toLowerCase();
-    final category = _category.toLowerCase();
-    final frames = _allFrames.where((frame) {
-      final matchesQuery =
-          query.isEmpty ||
-          frame.name.toLowerCase().contains(query) ||
-          (frame.brand?.toLowerCase().contains(query) ?? false);
-      final matchesCategory =
-          _category == 'All' ||
-          (frame.category?.toLowerCase().contains(category) ?? false);
-      final matchesAvailability =
-          _availability == 'all' ||
-          switch (_availability) {
-            'available' => frame.stockQuantity > 2,
-            'low' => frame.stockQuantity > 0 && frame.stockQuantity <= 2,
-            'out' => frame.stockQuantity <= 0,
-            _ => true,
-          };
-      return matchesQuery && matchesCategory && matchesAvailability;
-    }).toList();
-
-    frames.sort((a, b) {
-      return switch (_sort) {
-        'name-asc' => a.name.compareTo(b.name),
-        'name-desc' => b.name.compareTo(a.name),
-        'price-low' => a.price.compareTo(b.price),
-        'price-high' => b.price.compareTo(a.price),
-        _ => b.frameId.compareTo(a.frameId),
-      };
-    });
-    return frames;
+  @override
+  void initState() {
+    super.initState();
+    final realtime = PatientRealtimeService.instance;
+    _framesListenerCleanup = realtime.listenToPatientData(
+      'frames',
+      _refreshFrames,
+    );
+    _connectionListenerCleanup = realtime.listen(
+      'realtime:connected',
+      (_) => _refreshFrames(),
+    );
   }
 
   @override
@@ -87,16 +65,15 @@ class _FramesCatalogPageState extends State<FramesCatalogPage> {
       _repositoryInitialized = true;
       _repository = repository;
       _allFrames = const [];
+      _currentPage = 1;
+      _totalFrames = 0;
+      _totalPages = 1;
+      _availableCategories = const [];
       _isLoading = repository != null;
       _hasError = false;
       _refreshError = null;
-      _refreshTimer?.cancel();
       if (repository != null) {
         _fetchFrames(repository);
-        _refreshTimer = Timer.periodic(
-          const Duration(seconds: 60),
-          (_) => _refreshFrames(),
-        );
       } else {
         _hasError = true;
       }
@@ -121,39 +98,82 @@ class _FramesCatalogPageState extends State<FramesCatalogPage> {
   }
 
   Future<void> _fetchFrames(FramesCatalogRepository repository) async {
-    if (_isFetching) return;
-    _isFetching = true;
+    final generation = ++_fetchGeneration;
+    var reloadForValidPage = false;
     try {
-      final frames = await repository.getFrames();
-      if (!mounted) return;
+      final result = await repository.getFrames(
+        page: _currentPage,
+        limit: 10,
+        search: _searchController.text.trim(),
+        category: _category,
+        availability: _availability,
+        sort: _sort,
+      );
+      if (!mounted || generation != _fetchGeneration) return;
+      final pageCount = result.totalPages < 1 ? 1 : result.totalPages;
+      if (_currentPage > pageCount) {
+        setState(() => _currentPage = pageCount);
+        reloadForValidPage = true;
+        return;
+      }
       setState(() {
-        _allFrames = frames;
+        _allFrames = result.frames;
+        _availableCategories = result.categories;
+        _totalFrames = result.total;
+        _totalPages = pageCount;
         _isLoading = false;
         _hasError = false;
         _refreshError = null;
       });
     } on ApiFailure catch (failure) {
-      if (!mounted) return;
+      if (!mounted || generation != _fetchGeneration) return;
       setState(() {
         _isLoading = false;
         _hasError = _allFrames.isEmpty;
         _refreshError = _allFrames.isEmpty ? null : failure.message;
       });
     } finally {
-      _isFetching = false;
+      if (reloadForValidPage && mounted && generation == _fetchGeneration) {
+        unawaited(_fetchFrames(repository));
+      }
     }
+  }
+
+  void _handleSearchChanged(String _) {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() => _currentPage = 1);
+      _refreshFrames();
+    });
+  }
+
+  void _applyFilter(VoidCallback update) {
+    setState(() {
+      update();
+      _currentPage = 1;
+    });
+    _refreshFrames();
+  }
+
+  void _changePage(int page) {
+    if (page < 1 || page > _totalPages || page == _currentPage) return;
+    setState(() => _currentPage = page);
+    _refreshFrames();
   }
 
   void _refreshFrames() {
     final repository = _repository;
-    if (repository != null && !_isFetching) {
+    if (repository != null) {
       unawaited(_fetchFrames(repository));
     }
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _framesListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
+    _searchDebounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -170,7 +190,7 @@ class _FramesCatalogPageState extends State<FramesCatalogPage> {
         : compact
         ? 22.0
         : 18.0;
-    final frames = _visibleFrames;
+    final frames = _allFrames;
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
@@ -195,14 +215,19 @@ class _FramesCatalogPageState extends State<FramesCatalogPage> {
                 availability: _availability,
                 categories: _categories,
                 selectedCategory: _category,
-                onSearchChanged: (_) => setState(() {}),
+                onSearchChanged: _handleSearchChanged,
                 onSortChanged: (value) {
-                  if (value != null) setState(() => _sort = value);
+                  if (value != null) {
+                    _applyFilter(() => _sort = value);
+                  }
                 },
                 onAvailabilityChanged: (value) {
-                  if (value != null) setState(() => _availability = value);
+                  if (value != null) {
+                    _applyFilter(() => _availability = value);
+                  }
                 },
-                onCategoryChanged: (value) => setState(() => _category = value),
+                onCategoryChanged: (value) =>
+                    _applyFilter(() => _category = value),
               ),
               const SizedBox(height: 20),
               if (_refreshError != null) ...[
@@ -226,10 +251,19 @@ class _FramesCatalogPageState extends State<FramesCatalogPage> {
                 frames: frames,
                 isLoading: _isLoading,
                 hasError: _hasError,
-                isEmptyCatalog: _allFrames.isEmpty && !_hasError,
+                isEmptyCatalog:
+                    _totalFrames == 0 &&
+                    _searchController.text.trim().isEmpty &&
+                    _category == 'All' &&
+                    _availability == 'all' &&
+                    !_hasError,
                 onOpenDetails: _showDetails,
                 onTryOn: _launchTryOn,
                 onRetry: _loadFrames,
+                totalFrames: _totalFrames,
+                currentPage: _currentPage,
+                totalPages: _totalPages,
+                onPageChange: _changePage,
               ),
             ],
           ),
@@ -590,6 +624,10 @@ class _CollectionCard extends StatelessWidget {
     required this.onOpenDetails,
     required this.onTryOn,
     required this.onRetry,
+    required this.totalFrames,
+    required this.currentPage,
+    required this.totalPages,
+    required this.onPageChange,
   });
 
   final List<CatalogFrame> frames;
@@ -599,6 +637,10 @@ class _CollectionCard extends StatelessWidget {
   final ValueChanged<CatalogFrame> onOpenDetails;
   final ValueChanged<CatalogFrame> onTryOn;
   final VoidCallback onRetry;
+  final int totalFrames;
+  final int currentPage;
+  final int totalPages;
+  final ValueChanged<int> onPageChange;
 
   @override
   Widget build(BuildContext context) {
@@ -635,7 +677,7 @@ class _CollectionCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                _FrameCount(count: frames.length),
+                _FrameCount(count: totalFrames),
               ],
             ),
           ),
@@ -677,6 +719,38 @@ class _CollectionCard extends StatelessWidget {
                 );
               },
             ),
+          if (!isLoading && !hasError && totalFrames > 0) ...[
+            Divider(height: 1, color: theme.colorScheme.outline),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Page $currentPage of $totalPages',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: secondary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Previous page',
+                    onPressed: currentPage > 1
+                        ? () => onPageChange(currentPage - 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  IconButton(
+                    tooltip: 'Next page',
+                    onPressed: currentPage < totalPages
+                        ? () => onPageChange(currentPage + 1)
+                        : null,
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

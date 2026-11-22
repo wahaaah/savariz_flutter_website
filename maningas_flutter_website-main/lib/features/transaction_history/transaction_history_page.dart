@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_controller.dart';
 import '../auth/application/patient_auth_scope.dart';
 import '../auth/domain/patient_session.dart';
@@ -38,13 +39,31 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   PatientAuthController? _controller;
   TransactionHistoryRepository? _repository;
   List<TransactionRecord> _transactions = const [];
+  int _totalItems = 0;
+  int _totalPages = 1;
   TransactionHistoryPresentationState _loadState =
       TransactionHistoryPresentationState.ready;
   String? _errorMessage;
   String? _requestedSessionKey;
-  Timer? _refreshTimer;
+  void Function()? _transactionsListenerCleanup;
+  void Function()? _connectionListenerCleanup;
   bool _requestInProgress = false;
+  bool _refreshPending = false;
   int _loadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final realtime = PatientRealtimeService.instance;
+    _transactionsListenerCleanup = realtime.listenToPatientData(
+      'transactions',
+      _refreshTransactions,
+    );
+    _connectionListenerCleanup = realtime.listen(
+      'realtime:connected',
+      (_) => _refreshTransactions(),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -70,9 +89,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     super.didUpdateWidget(oldWidget);
     if (widget.transactions != oldWidget.transactions) {
       _transactions = widget.transactions ?? const [];
+      _totalItems = _transactions.length;
+      final pageCount = (_totalItems / _pageSize).ceil();
+      _totalPages = pageCount < 1 ? 1 : pageCount;
       _currentPage = 1;
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
     }
   }
 
@@ -80,7 +100,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   void dispose() {
     _loadGeneration++;
     _requestInProgress = false;
-    _refreshTimer?.cancel();
+    _refreshPending = false;
+    _transactionsListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
     _controller?.removeListener(_handleSessionChange);
     super.dispose();
   }
@@ -94,11 +116,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   void _loadForCurrentSession() {
     final repository = _repository;
     if (repository == null) {
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
       _requestedSessionKey = null;
       _loadGeneration++;
       _requestInProgress = false;
+      _refreshPending = false;
       if (_loadState !=
           TransactionHistoryPresentationState.authenticationRequired) {
         setState(() {
@@ -114,10 +135,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
     final session = _controller?.currentSession;
     if (session == null) {
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
       _loadGeneration++;
       _requestInProgress = false;
+      _refreshPending = false;
       _requestedSessionKey = null;
       if (_loadState !=
           TransactionHistoryPresentationState.authenticationRequired) {
@@ -133,19 +153,22 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     }
     final key = '${session.patientId}\u0000${session.token}';
     if (_requestedSessionKey == key) return;
-    _refreshTimer?.cancel();
     _requestedSessionKey = key;
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _refreshTransactions(),
+    _fetchTransactions(
+      repository,
+      session,
+      ++_loadGeneration,
+      page: _currentPage,
     );
-    _fetchTransactions(repository, session, ++_loadGeneration);
   }
 
   void _refreshTransactions() {
-    if (_requestInProgress ||
-        widget.transactions != null ||
+    if (widget.transactions != null ||
         widget.presentationState != null) {
+      return;
+    }
+    if (_requestInProgress) {
+      _refreshPending = true;
       return;
     }
     final repository = _repository;
@@ -155,6 +178,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       repository,
       session,
       ++_loadGeneration,
+      page: _currentPage,
       silent: true,
     );
   }
@@ -163,7 +187,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     TransactionHistoryRepository repository,
     PatientSession session,
     int generation,
-    {bool silent = false}
+    {required int page, bool silent = false}
   ) async {
     _requestInProgress = true;
     if (mounted) {
@@ -175,15 +199,19 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       });
     }
     try {
-      final records = await repository.getTransactions(
+      final result = await repository.getTransactions(
         patientId: session.patientId,
         token: session.token,
+        page: page,
+        limit: _pageSize,
       );
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        _transactions = records;
+        _transactions = result.items;
+        _totalItems = result.total;
+        _totalPages = result.totalPages < 1 ? 1 : result.totalPages;
         _loadState = TransactionHistoryPresentationState.ready;
-        if (!silent) _currentPage = 1;
+        _currentPage = page.clamp(1, _totalPages).toInt();
       });
     } on ApiFailure catch (failure) {
       if (!mounted || generation != _loadGeneration) return;
@@ -209,13 +237,37 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         _errorMessage = 'Unable to load transaction history. Please try again.';
       });
     } finally {
-      if (generation == _loadGeneration) _requestInProgress = false;
+      if (generation == _loadGeneration) {
+        _requestInProgress = false;
+        if (_refreshPending && mounted) {
+          _refreshPending = false;
+          _refreshTransactions();
+        }
+      }
     }
   }
 
   void _retry() {
     _requestedSessionKey = null;
     _loadForCurrentSession();
+  }
+
+  void _changePage(int page) {
+    if (page < 1 || page > _totalPages) return;
+    if (widget.transactions != null) {
+      setState(() => _currentPage = page);
+      return;
+    }
+    final repository = _repository;
+    final session = _controller?.currentSession;
+    if (repository == null || session == null) return;
+    setState(() => _currentPage = page);
+    _fetchTransactions(
+      repository,
+      session,
+      ++_loadGeneration,
+      page: page,
+    );
   }
 
   List<TransactionRecord> get _sortedTransactions {
@@ -243,12 +295,19 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         ? 22.0
         : 18.0;
     final transactions = _sortedTransactions;
-    final pageCount = (transactions.length / _pageSize).ceil();
-    final safePage = pageCount == 0 ? 1 : _currentPage.clamp(1, pageCount);
-    final pageTransactions = transactions
-        .skip((safePage - 1) * _pageSize)
-        .take(_pageSize)
-        .toList();
+    final externalTransactions = widget.transactions != null;
+    final pageCount = externalTransactions
+        ? (transactions.length / _pageSize).ceil()
+        : _totalPages;
+    final safePage = pageCount == 0
+        ? 1
+        : _currentPage.clamp(1, pageCount).toInt();
+    final pageTransactions = externalTransactions
+        ? transactions
+              .skip((safePage - 1) * _pageSize)
+              .take(_pageSize)
+              .toList()
+        : transactions;
 
     if (safePage != _currentPage) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -277,10 +336,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               const SizedBox(height: 24),
               _BillingRecordsCard(
                 transactions: pageTransactions,
-                totalItems: transactions.length,
+                totalItems: externalTransactions
+                    ? transactions.length
+                    : _totalItems,
                 page: safePage,
                 pageSize: _pageSize,
-                onPageChanged: (page) => setState(() => _currentPage = page),
+                onPageChanged: _changePage,
                 presentationState: widget.presentationState ?? _loadState,
                 errorMessage: _errorMessage,
                 onRetry: _retry,
@@ -513,8 +574,14 @@ class _TransactionPagination extends StatelessWidget {
     final secondary = theme.extension<PatientPortalTextColors>()!.secondary;
     final compact = MediaQuery.sizeOf(context).width <= 680;
     final totalPages = (totalItems / pageSize).ceil();
-    final start = (page - 1) * pageSize + 1;
-    final end = (page * pageSize).clamp(0, totalItems);
+    final start = totalItems == 0 ? 0 : (page - 1) * pageSize + 1;
+    final end = (page * pageSize).clamp(0, totalItems).toInt();
+    final pageNumbers = totalPages <= 5
+        ? List<int>.generate(totalPages, (index) => index + 1)
+        : (<int>{1, page - 1, page, page + 1, totalPages}
+              .where((number) => number >= 1 && number <= totalPages)
+              .toList()
+            ..sort());
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
@@ -550,13 +617,22 @@ class _TransactionPagination extends StatelessWidget {
                 compact: compact,
                 onPressed: () => onPageChanged(page - 1),
               ),
-              for (var number = 1; number <= totalPages; number++)
+              for (var index = 0; index < pageNumbers.length; index++) ...[
+                if (index > 0 &&
+                    pageNumbers[index] - pageNumbers[index - 1] > 1)
+                  Text(
+                    '...',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: secondary,
+                    ),
+                  ),
                 _PageNumberButton(
-                  number: number,
-                  active: number == page,
+                  number: pageNumbers[index],
+                  active: pageNumbers[index] == page,
                   compact: compact,
-                  onPressed: () => onPageChanged(number),
+                  onPressed: () => onPageChanged(pageNumbers[index]),
                 ),
+              ],
               _PagerButton(
                 label: 'Next',
                 enabled: page < totalPages,

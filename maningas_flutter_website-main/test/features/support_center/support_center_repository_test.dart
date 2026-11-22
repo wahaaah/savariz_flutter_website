@@ -19,7 +19,7 @@ void main() {
             requests.add(request);
             expect(request.headers['Authorization'], 'Bearer test-token');
             return switch ('${request.method} ${request.url.path}') {
-              'GET /api/patients/support/my-tickets' => http.Response(
+              'GET /api/patients/support/my-tickets/page' => http.Response(
                 jsonEncode({
                   'tickets': [
                     {
@@ -36,6 +36,7 @@ void main() {
                       'resolution': 'Cancelled by patient',
                     },
                   ],
+                  'pagination': {'page': 1, 'total': 1, 'totalPages': 1},
                 }),
                 200,
               ),
@@ -93,10 +94,12 @@ void main() {
       final tickets = await repository.getMyTickets(
         patientId: 'patient-7',
         token: 'test-token',
+        page: 1,
+        limit: 10,
       );
-      expect(tickets, hasLength(1));
-      expect(tickets.single.id, '42');
-      expect(tickets.single.status, 'In Progress');
+      expect(tickets.tickets, hasLength(1));
+      expect(tickets.tickets.single.id, '42');
+      expect(tickets.tickets.single.status, 'In Progress');
 
       final messages = await repository.getMessages(
         patientId: 'patient-7',
@@ -142,7 +145,7 @@ void main() {
       expect(
         requests.map((request) => '${request.method} ${request.url.path}'),
         [
-          'GET /api/patients/support/my-tickets',
+          'GET /api/patients/support/my-tickets/page',
           'GET /api/patients/support/tickets/42/messages',
           'POST /api/patients/support/tickets',
           'PUT /api/patients/support/tickets/42/cancel',

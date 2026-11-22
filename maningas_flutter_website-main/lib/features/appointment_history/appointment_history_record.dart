@@ -15,6 +15,7 @@ class PatientAppointment implements AppointmentHistoryRecord {
     this.id,
     this.dateValue,
     this.time,
+    this.endTime,
     this.purpose,
     this.status,
     this.source,
@@ -29,6 +30,9 @@ class PatientAppointment implements AppointmentHistoryRecord {
       ),
       time: _timeOnly(
         json['appointment_time'] ?? json['appointmentTime'] ?? json['time'],
+      ),
+      endTime: _timeOnly(
+        json['appointment_end_time'] ?? json['appointmentEndTime'],
       ),
       purpose: _optionalString(
         json['purpose_of_visit'] ??
@@ -57,6 +61,7 @@ class PatientAppointment implements AppointmentHistoryRecord {
   final String? dateValue;
   @override
   final String? time;
+  final String? endTime;
   @override
   final String? purpose;
   @override
@@ -67,7 +72,8 @@ class PatientAppointment implements AppointmentHistoryRecord {
   final String? patientName;
 
   @override
-  DateTime? get date => dateValue == null ? null : DateTime.tryParse(dateValue!);
+  DateTime? get date =>
+      dateValue == null ? null : DateTime.tryParse(dateValue!);
 
   @override
   DateTime? get scheduledAt {

@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_scope.dart';
 import '../auth/domain/patient_session.dart';
 import 'notification_repository.dart';
@@ -188,7 +187,6 @@ class _TopBarState extends State<_TopBar> {
   final _bellKey = GlobalKey();
   final _notificationTapRegionGroup = Object();
   OverlayEntry? _notificationDropdown;
-  Timer? _refreshTimer;
   bool _isLoading = false;
   bool _isMarkingAllRead = false;
   int? _markingNotificationId;
@@ -198,6 +196,8 @@ class _TopBarState extends State<_TopBar> {
   bool _authenticationFailed = false;
   int _requestGeneration = 0;
   int _mutationGeneration = 0;
+  void Function()? _notificationListenerCleanup;
+  void Function()? _connectionListenerCleanup;
 
   bool get _apiMode =>
       widget.notificationRepository != null && widget.session != null;
@@ -222,7 +222,6 @@ class _TopBarState extends State<_TopBar> {
     if (oldPatientId != newPatientId ||
         oldToken != newToken ||
         oldWidget.notificationRepository != widget.notificationRepository) {
-      _refreshTimer?.cancel();
       _requestGeneration++;
       _isLoading = false;
       _notifications.clear();
@@ -236,17 +235,32 @@ class _TopBarState extends State<_TopBar> {
   }
 
   void _startApiRefresh() {
-    if (!_apiMode || _authenticationFailed) return;
-    _loadApiNotifications();
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 20),
+    _notificationListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
+    if (!_apiMode || _authenticationFailed) {
+      PatientRealtimeService.instance.disconnect();
+      return;
+    }
+
+    final token = widget.session!.token;
+    final realtime = PatientRealtimeService.instance;
+    realtime.connect(token);
+    _notificationListenerCleanup = realtime.listen(
+      'notification:changed',
       (_) => _loadApiNotifications(),
     );
+    _connectionListenerCleanup = realtime.listen(
+      'realtime:connected',
+      (_) => _loadApiNotifications(),
+    );
+    _loadApiNotifications();
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _notificationListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
+    PatientRealtimeService.instance.disconnect();
     _notificationDropdown?.remove();
     _notificationDropdown = null;
     super.dispose();
@@ -334,8 +348,7 @@ class _TopBarState extends State<_TopBar> {
     _errorMessage = failure.message;
     if (failure.statusCode == 401) {
       _authenticationFailed = true;
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
+      PatientRealtimeService.instance.disconnect();
     }
   }
 

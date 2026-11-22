@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../appointment_history/appointment_history_repository.dart';
 import '../appointment_history/appointment_history_page.dart';
 import '../appointment_history/appointment_history_record.dart';
@@ -223,14 +224,35 @@ class _DashboardContentState extends State<_DashboardContent> {
   String? _patientDetailsError;
   String? _requestedSessionKey;
   String? _patientDetailsSessionKey;
-  Timer? _appointmentRefreshTimer;
-  Timer? _patientDetailsRefreshTimer;
+  void Function()? _appointmentsListenerCleanup;
+  void Function()? _profileListenerCleanup;
+  void Function()? _connectionListenerCleanup;
   bool _isLoadingAppointments = false;
   bool _isLoadingPatientDetails = false;
   bool _appointmentRequestInFlight = false;
+  bool _appointmentRefreshPending = false;
   bool _patientDetailsRequestInFlight = false;
+  bool _patientDetailsRefreshPending = false;
   int _appointmentLoadGeneration = 0;
   int _patientDetailsLoadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final realtime = PatientRealtimeService.instance;
+    _appointmentsListenerCleanup = realtime.listenToPatientData(
+      'appointments',
+      _handleRealtimeUpdate,
+    );
+    _profileListenerCleanup = realtime.listenToPatientData(
+      'profile',
+      _handleRealtimeUpdate,
+    );
+    _connectionListenerCleanup = realtime.listen(
+      'realtime:connected',
+      (_) => _handleRealtimeUpdate(),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -261,10 +283,16 @@ class _DashboardContentState extends State<_DashboardContent> {
   void dispose() {
     _appointmentLoadGeneration++;
     _patientDetailsLoadGeneration++;
-    _appointmentRefreshTimer?.cancel();
-    _patientDetailsRefreshTimer?.cancel();
+    _appointmentsListenerCleanup?.call();
+    _profileListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
     _controller?.removeListener(_handleSessionChanged);
     super.dispose();
+  }
+
+  void _handleRealtimeUpdate() {
+    _loadAppointments(force: true, silent: true);
+    _refreshPatientDetails();
   }
 
   void _handleSessionChanged() {
@@ -278,10 +306,9 @@ class _DashboardContentState extends State<_DashboardContent> {
     final repository = _appointmentRepository;
     final session = _controller?.currentSession;
     if (repository == null || session == null) {
-      _appointmentRefreshTimer?.cancel();
-      _appointmentRefreshTimer = null;
       _appointmentLoadGeneration++;
       _appointmentRequestInFlight = false;
+      _appointmentRefreshPending = false;
       if (_loadedAppointments != null ||
           _appointmentError != null ||
           _isLoadingAppointments) {
@@ -298,7 +325,10 @@ class _DashboardContentState extends State<_DashboardContent> {
     final sessionKey = '${session.patientId}\u0000${session.token}';
     final isNewSession = sessionKey != _requestedSessionKey;
     if (!force && !isNewSession) return;
-    if (_appointmentRequestInFlight && !isNewSession) return;
+    if (_appointmentRequestInFlight && !isNewSession) {
+      if (force) _appointmentRefreshPending = true;
+      return;
+    }
 
     _requestedSessionKey = sessionKey;
     final generation = ++_appointmentLoadGeneration;
@@ -313,10 +343,6 @@ class _DashboardContentState extends State<_DashboardContent> {
       _appointmentError = null;
     });
 
-    _appointmentRefreshTimer ??= Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _loadAppointments(force: true, silent: true),
-    );
     _fetchAppointments(repository, session, generation);
   }
 
@@ -362,6 +388,10 @@ class _DashboardContentState extends State<_DashboardContent> {
     } finally {
       if (generation == _appointmentLoadGeneration) {
         _appointmentRequestInFlight = false;
+        if (_appointmentRefreshPending && mounted) {
+          _appointmentRefreshPending = false;
+          _loadAppointments(force: true, silent: true);
+        }
       }
     }
   }
@@ -374,8 +404,7 @@ class _DashboardContentState extends State<_DashboardContent> {
     if (repository == null || session == null) {
       _patientDetailsLoadGeneration++;
       _patientDetailsRequestInFlight = false;
-      _patientDetailsRefreshTimer?.cancel();
-      _patientDetailsRefreshTimer = null;
+      _patientDetailsRefreshPending = false;
       _patientDetailsSessionKey = null;
       if (_patientDetails != null ||
           _patientDetailsError != null ||
@@ -391,14 +420,9 @@ class _DashboardContentState extends State<_DashboardContent> {
 
     final sessionKey = '${session.patientId}\u0000${session.token}';
     if (sessionKey == _patientDetailsSessionKey) return;
-    _patientDetailsRefreshTimer?.cancel();
     _patientDetailsRequestInFlight = false;
     _patientDetailsSessionKey = sessionKey;
     final generation = ++_patientDetailsLoadGeneration;
-    _patientDetailsRefreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _refreshPatientDetails(),
-    );
     setState(() {
       _patientDetails = null;
       _patientDetailsError = null;
@@ -408,7 +432,10 @@ class _DashboardContentState extends State<_DashboardContent> {
   }
 
   void _refreshPatientDetails() {
-    if (_patientDetailsRequestInFlight) return;
+    if (_patientDetailsRequestInFlight) {
+      _patientDetailsRefreshPending = true;
+      return;
+    }
     final repository = _patientProfileRepository;
     final session = _controller?.currentSession;
     if (repository == null || session == null) return;
@@ -459,6 +486,10 @@ class _DashboardContentState extends State<_DashboardContent> {
     } finally {
       if (generation == _patientDetailsLoadGeneration) {
         _patientDetailsRequestInFlight = false;
+        if (_patientDetailsRefreshPending && mounted) {
+          _patientDetailsRefreshPending = false;
+          _refreshPatientDetails();
+        }
       }
     }
   }

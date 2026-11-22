@@ -13,7 +13,7 @@ import 'package:patient_portal_flutter/features/auth/data/patient_auth_repositor
 import 'package:patient_portal_flutter/features/auth/domain/patient_registration.dart';
 import 'package:patient_portal_flutter/features/auth/domain/patient_session.dart';
 import 'package:patient_portal_flutter/features/auth/domain/patient_session_store.dart';
-import 'package:patient_portal_flutter/features/frames_catalog/catalog_frame.dart';
+
 import 'package:patient_portal_flutter/features/frames_catalog/frames_catalog_repository.dart';
 import 'package:patient_portal_flutter/features/profile/patient_profile_repository.dart';
 import 'package:patient_portal_flutter/features/shell/notification_repository.dart';
@@ -22,7 +22,6 @@ import 'package:patient_portal_flutter/features/support_center/support_center_re
 import 'package:patient_portal_flutter/features/support_center/support_image_attachment.dart';
 import 'package:patient_portal_flutter/features/support_center/support_ticket.dart';
 import 'package:patient_portal_flutter/features/transaction_history/transaction_history_repository.dart';
-import 'package:patient_portal_flutter/features/transaction_history/transaction_record.dart';
 import 'package:patient_portal_flutter/core/network/api_failure.dart';
 
 void main() {
@@ -356,6 +355,16 @@ class _FakeAppointmentHistoryRepository
   }) async => [];
 
   @override
+  Future<AppointmentHistoryPageResult> getAppointmentPage({
+    required String patientId,
+    required String token,
+    required int page,
+    required int limit,
+    required String filter,
+  }) async =>
+      const AppointmentHistoryPageResult(items: [], total: 0, totalPages: 1);
+
+  @override
   Future<BookingSchedule> getBookingSchedule({required String token}) async =>
       const BookingSchedule();
 
@@ -378,7 +387,20 @@ class _FakeAppointmentHistoryRepository
 
 class _FakeFramesCatalogRepository implements FramesCatalogRepository {
   @override
-  Future<List<CatalogFrame>> getFrames() async => [];
+  Future<CatalogFramePage> getFrames({
+    required int page,
+    required int limit,
+    required String search,
+    required String category,
+    required String availability,
+    required String sort,
+  }) async => const CatalogFramePage(
+    frames: [],
+    categories: [],
+    page: 1,
+    total: 0,
+    totalPages: 1,
+  );
 }
 
 class _FakeNotificationRepository implements NotificationRepository {
@@ -410,10 +432,13 @@ class _FakeNotificationRepository implements NotificationRepository {
 class _FakeTransactionHistoryRepository
     implements TransactionHistoryRepository {
   @override
-  Future<List<TransactionRecord>> getTransactions({
+  Future<TransactionHistoryPageResult> getTransactions({
     required String patientId,
     required String token,
-  }) async => [];
+    required int page,
+    required int limit,
+  }) async =>
+      const TransactionHistoryPageResult(items: [], total: 0, totalPages: 1);
 }
 
 class _FakePatientProfileRepository implements PatientProfileRepository {
@@ -433,10 +458,17 @@ class _FakePatientProfileRepository implements PatientProfileRepository {
 
 class _FakeSupportCenterRepository implements SupportCenterRepository {
   @override
-  Future<List<SupportTicket>> getMyTickets({
+  Future<SupportTicketListPage> getMyTickets({
     required String patientId,
     required String token,
-  }) async => [];
+    required int page,
+    required int limit,
+  }) async => const SupportTicketListPage(
+    tickets: [],
+    page: 1,
+    total: 0,
+    totalPages: 1,
+  );
 
   @override
   Future<List<SupportMessage>> getMessages({

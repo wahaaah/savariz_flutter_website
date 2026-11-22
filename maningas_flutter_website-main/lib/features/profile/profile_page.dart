@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_controller.dart';
 import '../auth/application/patient_auth_scope.dart';
 import '../auth/domain/patient_session.dart';
@@ -34,10 +35,26 @@ class _ProfilePageState extends State<ProfilePage> {
   PatientProfileDetails? _details;
   String? _detailsError;
   String? _detailsSessionKey;
-  Timer? _detailsRefreshTimer;
+  void Function()? _profileListenerCleanup;
+  void Function()? _connectionListenerCleanup;
   bool _isLoadingDetails = false;
   bool _detailsRequestInProgress = false;
+  bool _detailsRefreshPending = false;
   int _detailsLoadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final realtime = PatientRealtimeService.instance;
+    _profileListenerCleanup = realtime.listenToPatientData(
+      'profile',
+      _handleRealtimeUpdate,
+    );
+    _connectionListenerCleanup = realtime.listen(
+      'realtime:connected',
+      (_) => _handleRealtimeUpdate(),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -64,6 +81,10 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadPatientDetails();
   }
 
+  void _handleRealtimeUpdate() {
+    _loadPatientDetails(refresh: true);
+  }
+
   void _onControllerChanged() {
     if (!mounted) return;
     setState(() {});
@@ -74,7 +95,9 @@ class _ProfilePageState extends State<ProfilePage> {
   void dispose() {
     _detailsLoadGeneration++;
     _detailsRequestInProgress = false;
-    _detailsRefreshTimer?.cancel();
+    _detailsRefreshPending = false;
+    _profileListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
     _detailsRequestInProgress = false;
     _controller?.removeListener(_onControllerChanged);
     super.dispose();
@@ -280,8 +303,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (repository == null || session == null) {
       _detailsLoadGeneration++;
       _detailsRequestInProgress = false;
-      _detailsRefreshTimer?.cancel();
-      _detailsRefreshTimer = null;
+      _detailsRefreshPending = false;
       _detailsSessionKey = null;
       if (_details != null || _detailsError != null || _isLoadingDetails) {
         setState(() {
@@ -296,18 +318,17 @@ class _ProfilePageState extends State<ProfilePage> {
     final key = '${session.patientId}\u0000${session.token}';
     if (_detailsSessionKey == key) {
       if (refresh) {
-        _fetchPatientDetails(repository, session, _detailsLoadGeneration);
+        if (_detailsRequestInProgress) {
+          _detailsRefreshPending = true;
+        } else {
+          _fetchPatientDetails(repository, session, _detailsLoadGeneration);
+        }
       }
       return;
     }
-    _detailsRefreshTimer?.cancel();
     _detailsRequestInProgress = false;
     _detailsSessionKey = key;
     final generation = ++_detailsLoadGeneration;
-    _detailsRefreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _loadPatientDetails(refresh: true),
-    );
     setState(() {
       _details = null;
       _detailsError = null;
@@ -359,6 +380,10 @@ class _ProfilePageState extends State<ProfilePage> {
     } finally {
       if (generation == _detailsLoadGeneration) {
         _detailsRequestInProgress = false;
+        if (_detailsRefreshPending && mounted) {
+          _detailsRefreshPending = false;
+          _loadPatientDetails(refresh: true);
+        }
       }
     }
   }

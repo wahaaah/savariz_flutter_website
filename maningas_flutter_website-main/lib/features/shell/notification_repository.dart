@@ -40,7 +40,7 @@ class ApiNotificationRepository implements NotificationRepository {
   }) async {
     try {
       final rows = await _apiClient.getJsonList(
-        _patientPath(patientId),
+        '${_patientPath(patientId)}?limit=30',
         headers: _authHeaders(token),
       );
       return rows

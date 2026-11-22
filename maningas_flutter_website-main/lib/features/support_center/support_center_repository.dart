@@ -4,9 +4,11 @@ import 'support_image_attachment.dart';
 import 'support_ticket.dart';
 
 abstract interface class SupportCenterRepository {
-  Future<List<SupportTicket>> getMyTickets({
+  Future<SupportTicketListPage> getMyTickets({
     required String patientId,
     required String token,
+    required int page,
+    required int limit,
   });
 
   Future<List<SupportMessage>> getMessages({
@@ -39,6 +41,20 @@ abstract interface class SupportCenterRepository {
   });
 }
 
+class SupportTicketListPage {
+  const SupportTicketListPage({
+    required this.tickets,
+    required this.page,
+    required this.total,
+    required this.totalPages,
+  });
+
+  final List<SupportTicket> tickets;
+  final int page;
+  final int total;
+  final int totalPages;
+}
+
 class ApiSupportCenterRepository implements SupportCenterRepository {
   const ApiSupportCenterRepository(this._apiClient);
 
@@ -51,20 +67,34 @@ class ApiSupportCenterRepository implements SupportCenterRepository {
   };
 
   @override
-  Future<List<SupportTicket>> getMyTickets({
+  Future<SupportTicketListPage> getMyTickets({
     required String patientId,
     required String token,
+    required int page,
+    required int limit,
   }) async {
     final response = await _apiClient.getJsonMapOrList(
-      '$_basePath/my-tickets?_=${DateTime.now().millisecondsSinceEpoch}',
+      '$_basePath/my-tickets/page?page=$page&limit=$limit'
+      '&_=${DateTime.now().millisecondsSinceEpoch}',
       headers: _headers(token),
     );
     _ensureSuccessfulResponse(response);
     final tickets = _rows(response, const ['tickets', 'data']);
-    return tickets
+    final parsedTickets = tickets
         .map((row) => SupportTicket.fromJson(row, patientId: patientId))
         .where((ticket) => !ticket.isPatientCancelled)
         .toList(growable: false);
+    if (response is! Map<String, dynamic> ||
+        response['pagination'] is! Map<String, dynamic>) {
+      throw const FormatException('Invalid paginated support response.');
+    }
+    final pagination = response['pagination'] as Map<String, dynamic>;
+    return SupportTicketListPage(
+      tickets: parsedTickets,
+      page: _paginationValue(pagination['page']),
+      total: _paginationValue(pagination['total']),
+      totalPages: _paginationValue(pagination['totalPages']),
+    );
   }
 
   @override
@@ -160,6 +190,12 @@ class ApiSupportCenterRepository implements SupportCenterRepository {
     );
     _ensureSuccessfulResponse(response);
   }
+}
+
+int _paginationValue(Object? value) {
+  if (value is int && value >= 0) return value;
+  if (value is num && value >= 0) return value.toInt();
+  throw const FormatException('Invalid support pagination metadata.');
 }
 
 void _ensureSuccessfulResponse(Object response) {

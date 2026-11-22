@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../appointment_history/appointment_history_record.dart';
 import '../appointment_history/appointment_history_repository.dart';
 import '../auth/application/patient_auth_controller.dart';
@@ -31,7 +32,7 @@ class BookingPage extends StatefulWidget {
 }
 
 class _BookingPageState extends State<BookingPage> {
-  final _appointmentsVersion = ValueNotifier<int>(0);
+  final _myAppointmentsKey = GlobalKey();
 
   DateTime get _now => widget.now ?? DateTime.now();
   DateTime get _today => DateTime(_now.year, _now.month, _now.day);
@@ -48,7 +49,9 @@ class _BookingPageState extends State<BookingPage> {
   AppointmentHistoryRepository? _repository;
   BookingSchedule _loadedSchedule = const BookingSchedule();
   List<AppointmentHistoryRecord> _loadedAppointments = const [];
-  Timer? _refreshTimer;
+  void Function()? _availabilityListenerCleanup;
+  void Function()? _appointmentsListenerCleanup;
+  void Function()? _connectionListenerCleanup;
   String? _requestedSessionKey;
   String? _loadError;
   String? _actionMessage;
@@ -58,14 +61,35 @@ class _BookingPageState extends State<BookingPage> {
   bool _isSubmitting = false;
   bool _isCancelling = false;
   bool _requestInProgress = false;
+  bool _refreshPending = false;
   int _loadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
+    final realtime = PatientRealtimeService.instance;
+    _availabilityListenerCleanup = realtime.listenToPatientData(
+      'availability',
+      _handleRealtimeUpdate,
+    );
+    _appointmentsListenerCleanup = realtime.listenToPatientData(
+      'appointments',
+      _handleRealtimeUpdate,
+    );
+    _connectionListenerCleanup = realtime.listen(
+      'realtime:connected',
+      (_) => _handleRealtimeUpdate(),
+    );
     if (widget.focusMyAppointments) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showMyAppointments();
+        final sectionContext = _myAppointmentsKey.currentContext;
+        if (!mounted || sectionContext == null) return;
+        Scrollable.ensureVisible(
+          sectionContext,
+          alignment: 0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
       });
     }
   }
@@ -90,8 +114,9 @@ class _BookingPageState extends State<BookingPage> {
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
-    _appointmentsVersion.dispose();
+    _availabilityListenerCleanup?.call();
+    _appointmentsListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
     _loadGeneration++;
     _controller?.removeListener(_handleSessionChange);
     super.dispose();
@@ -105,9 +130,14 @@ class _BookingPageState extends State<BookingPage> {
 
   void _handleSessionChange() => _loadForCurrentSession();
 
+  void _handleRealtimeUpdate() {
+    if (widget.schedule == null || widget.appointments == null) {
+      unawaited(_refreshAppointments(force: true));
+    }
+  }
+
   void _loadForCurrentSession() {
     if (widget.schedule != null && widget.appointments != null) {
-      _refreshTimer?.cancel();
       _scheduleLoaded = true;
       _isLoading = false;
       return;
@@ -115,11 +145,10 @@ class _BookingPageState extends State<BookingPage> {
     final repository = _repository;
     final session = _controller?.currentSession;
     if (repository == null || session == null) {
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
       _requestedSessionKey = null;
       _loadGeneration++;
       _requestInProgress = false;
+      _refreshPending = false;
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -130,7 +159,6 @@ class _BookingPageState extends State<BookingPage> {
               ? 'Appointment services are not connected.'
               : 'Please sign in again to view appointment availability.';
         });
-        _appointmentsVersion.value++;
       }
       return;
     }
@@ -138,16 +166,15 @@ class _BookingPageState extends State<BookingPage> {
     final key = '${session.patientId}\u0000${session.token}';
     if (_requestedSessionKey == key) return;
     _requestedSessionKey = key;
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => _refreshAppointments(force: true),
-    );
     _refreshAppointments(force: true);
   }
 
   Future<void> _refreshAppointments({bool force = false}) async {
-    if (_requestInProgress || (_isLoading && !force)) return;
+    if (_requestInProgress) {
+      if (force) _refreshPending = true;
+      return;
+    }
+    if (_isLoading && !force) return;
     final repository = _repository;
     final session = _controller?.currentSession;
     if (repository == null || session == null) return;
@@ -181,7 +208,6 @@ class _BookingPageState extends State<BookingPage> {
           _selectedTime = null;
         }
       });
-      _appointmentsVersion.value++;
     } on ApiFailure catch (failure) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
@@ -205,6 +231,10 @@ class _BookingPageState extends State<BookingPage> {
       });
     } finally {
       _requestInProgress = false;
+      if (_refreshPending && mounted) {
+        _refreshPending = false;
+        unawaited(_refreshAppointments(force: true));
+      }
     }
   }
 
@@ -255,8 +285,6 @@ class _BookingPageState extends State<BookingPage> {
                   onRetry: null,
                 ),
               if (_actionMessage != null) const SizedBox(height: 18),
-              _buildMyAppointmentsButton(),
-              const SizedBox(height: 18),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final calendar = _CalendarCard(
@@ -282,7 +310,10 @@ class _BookingPageState extends State<BookingPage> {
                       setState(() => _selectedTime = time);
                     },
                     onPurposeChanged: (purpose) {
-                      setState(() => _purpose = purpose);
+                      setState(() {
+                        _purpose = purpose;
+                        _selectedTime = null;
+                      });
                     },
                     onBook: _showConfirmation,
                     isSubmitting: _isSubmitting,
@@ -304,6 +335,14 @@ class _BookingPageState extends State<BookingPage> {
                   );
                 },
               ),
+              const SizedBox(height: 18),
+              MyAppointmentsSection(
+                key: _myAppointmentsKey,
+                appointments: _appointments,
+                now: _now,
+                onCancel: _cancelAppointment,
+                isCancelling: _isCancelling,
+              ),
             ],
           ),
         ),
@@ -317,128 +356,6 @@ class _BookingPageState extends State<BookingPage> {
   bool get _isAtMaximumMonth =>
       _visibleMonth.year == _maxDate.year &&
       _visibleMonth.month == _maxDate.month;
-
-  Widget _buildMyAppointmentsButton() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final appointmentCount = _appointments.length;
-            final summary =
-                '$appointmentCount appointment'
-                '${appointmentCount == 1 ? '' : 's'} · '
-                'requests and previous visits';
-            final title = Text(
-              'My appointments',
-              style: Theme.of(context).textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w800),
-            );
-            final subtitle = Text(
-              summary,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context)
-                    .extension<PatientPortalTextColors>()!
-                    .secondary,
-              ),
-            );
-            final action = FilledButton.icon(
-              key: const ValueKey('view-my-appointments'),
-              onPressed: _showMyAppointments,
-              icon: const Icon(Icons.calendar_month_outlined),
-              label: const Text('View appointments'),
-            );
-            if (constraints.maxWidth < 520) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  title,
-                  const SizedBox(height: 4),
-                  subtitle,
-                  const SizedBox(height: 12),
-                  action,
-                ],
-              );
-            }
-            return Row(
-              children: [
-                const Icon(Icons.view_list_outlined, color: Color(0xFF2563EB)),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [title, const SizedBox(height: 4), subtitle],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                action,
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showMyAppointments() {
-    final size = MediaQuery.sizeOf(context);
-    return showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: size.width <= 600 ? 12 : 40,
-            vertical: 24,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 850,
-              maxHeight: size.height * .88,
-            ),
-            child: ValueListenableBuilder<int>(
-              valueListenable: _appointmentsVersion,
-              builder: (context, _, _) => SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_actionMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: _BookingStatusNotice(
-                          message: _actionMessage!,
-                          isError: _actionIsError,
-                          isLoading: false,
-                          onRetry: null,
-                        ),
-                      ),
-                    MyAppointmentsSection(
-                      appointments: _appointments,
-                      now: _now,
-                      onCancel: (appointment) {
-                        unawaited(
-                          _cancelAppointment(
-                            appointment,
-                            onChanged: () {
-                              if (dialogContext.mounted) {
-                                setDialogState(() {});
-                              }
-                            },
-                          ),
-                        );
-                      },
-                      isCancelling: _isCancelling,
-                      onClose: () => Navigator.of(dialogContext).pop(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   void _changeMonth(int offset) {
     setState(() {
@@ -464,9 +381,13 @@ class _BookingPageState extends State<BookingPage> {
         _closureFor(_schedule, date) != null) {
       return true;
     }
+    final duration = _serviceDuration(_schedule, _purpose) ?? 30;
     return _slots.every(
       (time) =>
-          _slotPast(date, time, _now) || _slotBooked(_schedule, date, time),
+          _slotPast(date, time, _now) ||
+          _endTime(time, duration) == null ||
+          _slotBooked(_schedule, date, time, duration) ||
+          _slotClosed(_schedule, date, time, duration),
     );
   }
 
@@ -478,7 +399,8 @@ class _BookingPageState extends State<BookingPage> {
         title: const Text('Confirm appointment request?'),
         content: Text(
           'Date: ${_formatLongDate(_selectedDate!)}\n'
-          'Time: ${_formatTime(_selectedTime!)}\n'
+          'Time: ${_formatTime(_selectedTime!)}'
+          '${_selectedEndTime == null ? '' : '–${_formatTime(_selectedEndTime!)}'}\n'
           'Purpose: $_purpose',
         ),
         actions: [
@@ -506,6 +428,7 @@ class _BookingPageState extends State<BookingPage> {
     final date = _selectedDate;
     final time = _selectedTime;
     final purpose = _purpose;
+    final duration = _serviceDuration(_schedule, purpose);
     if (session == null || repository == null) {
       _showActionMessage(
         'Your patient session could not be found. Please sign in again.',
@@ -516,9 +439,12 @@ class _BookingPageState extends State<BookingPage> {
     if (date == null ||
         time == null ||
         purpose == null ||
+        duration == null ||
         _isDateUnavailable(date) ||
         _slotPast(date, time, _now) ||
-        _slotBooked(_schedule, date, time)) {
+        _slotBooked(_schedule, date, time, duration) ||
+        _slotClosed(_schedule, date, time, duration) ||
+        _endTime(time, duration) == null) {
       _showActionMessage(
         'That appointment time is no longer available. Choose another slot.',
         isError: true,
@@ -574,10 +500,15 @@ class _BookingPageState extends State<BookingPage> {
     }
   }
 
-  Future<void> _cancelAppointment(
-    AppointmentHistoryRecord appointment, {
-    VoidCallback? onChanged,
-  }) async {
+  String? get _selectedEndTime {
+    final time = _selectedTime;
+    final purpose = _purpose;
+    final duration = _serviceDuration(_schedule, purpose);
+    if (time == null || duration == null) return null;
+    return _endTime(time, duration);
+  }
+
+  Future<void> _cancelAppointment(AppointmentHistoryRecord appointment) async {
     final id = appointment.id;
     final session = _controller?.currentSession;
     final repository = _repository;
@@ -616,7 +547,6 @@ class _BookingPageState extends State<BookingPage> {
       _isCancelling = true;
       _actionMessage = null;
     });
-    onChanged?.call();
     try {
       final message = await repository.cancelAppointment(
         patientId: session.patientId,
@@ -646,10 +576,7 @@ class _BookingPageState extends State<BookingPage> {
         isError: true,
       );
     } finally {
-      if (mounted) {
-        setState(() => _isCancelling = false);
-        onChanged?.call();
-      }
+      if (mounted) setState(() => _isCancelling = false);
     }
   }
 
@@ -1100,11 +1027,32 @@ class _DetailsCard extends StatelessWidget {
     final secondary = theme.extension<PatientPortalTextColors>()!.secondary;
     final selected = selectedDate;
     final closure = selected == null ? null : _closureFor(schedule, selected);
+    final partialClosures = selected == null
+        ? <ClinicClosure>[]
+        : schedule.closures
+              .where(
+                (item) =>
+                    item.startTime != null &&
+                    item.endTime != null &&
+                    item.includes(selected),
+              )
+              .toList(growable: false);
+    final duration = _serviceDuration(schedule, purpose);
+    final selectedTimeValue = selectedTime;
+    final selectedTimeText = selectedTimeValue == null
+        ? null
+        : _formatTime(selectedTimeValue);
+    final selectedEndTime = selectedTimeValue == null || duration == null
+        ? null
+        : _endTime(selectedTimeValue, duration);
     final availableSlots = selected == null
         ? <String>[]
         : slots.where((time) {
             return !_slotPast(selected, time, now) &&
-                !_slotBooked(schedule, selected, time);
+                duration != null &&
+                _endTime(time, duration) != null &&
+                !_slotBooked(schedule, selected, time, duration) &&
+                !_slotClosed(schedule, selected, time, duration);
           }).toList();
 
     return Card(
@@ -1154,6 +1102,34 @@ class _DetailsCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (partialClosures.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.error.withValues(alpha: .06),
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(
+                        color: theme.colorScheme.error.withValues(alpha: .2),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final item in partialClosures)
+                          Text(
+                            'Clinic closed ${_formatTime(item.startTime!)}–'
+                            '${_formatTime(item.endTime!)}: ${item.reason}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                              height: 1.4,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -1166,7 +1142,9 @@ class _DetailsCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '30-minute intervals',
+                      purpose == null
+                          ? 'Select a service first'
+                          : '$duration-minute appointment',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: secondary,
                       ),
@@ -1185,6 +1163,10 @@ class _DetailsCard extends StatelessWidget {
                   )
                 else if (selected.weekday == DateTime.sunday)
                   const _EmptySlots(message: 'The clinic is closed on Sundays.')
+                else if (purpose == null)
+                  const _EmptySlots(
+                    message: 'Select a service to see available times.',
+                  )
                 else if (availableSlots.isEmpty)
                   const _EmptySlots(
                     message:
@@ -1207,8 +1189,35 @@ class _DetailsCard extends StatelessWidget {
                         itemBuilder: (context, index) {
                           final time = slots[index];
                           final past = _slotPast(selected, time, now);
-                          final booked = _slotBooked(schedule, selected, time);
-                          final unavailable = past || booked;
+                          final selectedDuration = _serviceDuration(
+                            schedule,
+                            purpose,
+                          );
+                          final booked =
+                              selectedDuration != null &&
+                              _slotBooked(
+                                schedule,
+                                selected,
+                                time,
+                                selectedDuration,
+                              );
+                          final closed =
+                              selectedDuration != null &&
+                              _slotClosed(
+                                schedule,
+                                selected,
+                                time,
+                                selectedDuration,
+                              );
+                          final tooLate =
+                              selectedDuration == null ||
+                              _endTime(time, selectedDuration) == null;
+                          final unavailable =
+                              past ||
+                              booked ||
+                              closed ||
+                              tooLate ||
+                              purpose == null;
                           final isSelected = selectedTime == time;
                           return OutlinedButton(
                             key: ValueKey('booking-time-$time'),
@@ -1264,26 +1273,29 @@ class _DetailsCard extends StatelessWidget {
                       vertical: 14,
                     ),
                   ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Eye Examination',
-                      child: Text('Eye Examination'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Follow-up',
-                      child: Text('Follow-up'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Frame / Eyewear',
-                      child: Text('Frame / Eyewear'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'Contact Lens',
-                      child: Text('Contact Lens'),
-                    ),
+                  items: [
+                    for (final service in schedule.services)
+                      DropdownMenuItem(
+                        value: service.name,
+                        child: Text(
+                          '${service.name} (${service.durationMinutes} min)',
+                        ),
+                      ),
                   ],
                   onChanged: onPurposeChanged,
                 ),
+                if (selectedTimeText != null && selectedEndTime != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Appointment time: $selectedTimeText'
+                      '–${_formatTime(selectedEndTime)}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: secondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(11),
@@ -1307,67 +1319,6 @@ class _DetailsCard extends StatelessWidget {
                           isLoading
                               ? 'Loading live appointment availability...'
                               : 'Appointment requests are sent to the clinic for confirmation.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: secondary,
-                            height: 1.45,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: theme.brightness == Brightness.dark
-                        ? const Color(0xFF2A2116)
-                        : const Color(0xFFFFFBEB),
-                    border: Border.all(
-                      color: theme.brightness == Brightness.dark
-                          ? const Color(0xFF57431F)
-                          : const Color(0xFFFDE68A),
-                    ),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: ExpansionTile(
-                    key: const ValueKey('appointment-terms-toggle'),
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: EdgeInsets.zero,
-                    title: Text(
-                      'Appointment Terms & Conditions',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          '1. Select an available date from today through the '
-                          'next 12 months. Past dates, Sundays, and clinic '
-                          'closure dates cannot be booked.\n'
-                          '2. Choose an available time slot. Slots are offered '
-                          'in 30-minute intervals from 8:00 AM to 5:30 PM. '
-                          'Availability can change; if a slot is taken before '
-                          'your request is submitted, select another available '
-                          'time.\n'
-                          '3. Choose the purpose that best matches your visit: '
-                          'Eye Examination, Follow-up, Frame / Eyewear, Contact '
-                          'Lens. Review the selected date, time, and purpose '
-                          'before submitting.\n'
-                          '4. Submitting creates an appointment request, not a '
-                          'confirmed appointment. The clinic must approve the '
-                          'request before it is confirmed.\n'
-                          '5. Please arrive 10 to 15 minutes before your '
-                          'scheduled appointment for check-in. Late arrivals '
-                          'may be delayed or rescheduled depending on clinic '
-                          'availability.\n'
-                          '6. You can cancel an eligible upcoming appointment '
-                          'from My Appointments. Cancellation cannot be '
-                          'undone. To request a different time, cancel the '
-                          'existing appointment if eligible, then submit a '
-                          'new request for an available slot.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: secondary,
                             height: 1.45,
@@ -1518,23 +1469,118 @@ class _LegendItem extends StatelessWidget {
 
 ClinicClosure? _closureFor(BookingSchedule schedule, DateTime date) {
   for (final closure in schedule.closures) {
-    if (closure.includes(date)) return closure;
+    if (closure.startTime == null &&
+        closure.endTime == null &&
+        closure.includes(date)) {
+      return closure;
+    }
   }
   return null;
 }
 
-bool _slotBooked(BookingSchedule schedule, DateTime date, String time) {
-  const releasedStatuses = {'cancelled', 'canceled', 'rejected', 'declined'};
+int? _serviceDuration(BookingSchedule schedule, String? purpose) {
+  if (purpose == null) return null;
+  final normalized = purpose.trim().toLowerCase();
+  for (final service in schedule.services) {
+    if (service.name.trim().toLowerCase() == normalized) {
+      return service.durationMinutes;
+    }
+  }
+  return switch (normalized) {
+    'eye examination' || 'frame / eyewear' || 'contact lens' => 60,
+    'follow-up' => 30,
+    'other' || 'walk-in consultation' => 30,
+    _ => null,
+  };
+}
+
+int? _timeMinutes(String time) {
+  final match = RegExp(r'^(\d{2}):(\d{2})').firstMatch(time);
+  if (match == null) return null;
+  final hours = int.parse(match.group(1)!);
+  final minutes = int.parse(match.group(2)!);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+String? _endTime(String startTime, int durationMinutes) {
+  final start = _timeMinutes(startTime);
+  if (start == null || durationMinutes <= 0) return null;
+  final end = start + durationMinutes;
+  if (end > 18 * 60) return null;
+  return '${_twoDigits(end ~/ 60)}:${_twoDigits(end % 60)}';
+}
+
+bool _slotBooked(
+  BookingSchedule schedule,
+  DateTime date,
+  String time,
+  int durationMinutes,
+) {
+  const releasedStatuses = {
+    'cancelled',
+    'canceled',
+    'rejected',
+    'declined',
+    'completed',
+  };
+  final requestedStart = _timeMinutes(time);
+  final requestedEnd = requestedStart == null
+      ? null
+      : requestedStart + durationMinutes;
+  if (requestedStart == null || requestedEnd == null) return true;
   return schedule.bookings.any((booking) {
     final bookingDate = DateTime(
       booking.appointmentDate.year,
       booking.appointmentDate.month,
       booking.appointmentDate.day,
     );
-    return bookingDate == date &&
-        booking.appointmentTime.substring(0, 5) == time.substring(0, 5) &&
-        !releasedStatuses.contains((booking.status ?? '').trim().toLowerCase());
+    if (bookingDate != DateTime(date.year, date.month, date.day) ||
+        releasedStatuses.contains(
+          (booking.status ?? '').trim().toLowerCase(),
+        )) {
+      return false;
+    }
+    final bookingStart = _timeMinutes(booking.appointmentTime);
+    final serviceDuration = _serviceDuration(schedule, booking.purpose);
+    final calculatedEndTime = serviceDuration == null
+        ? null
+        : _endTime(booking.appointmentTime, serviceDuration);
+    final bookingEnd =
+        (calculatedEndTime == null ? null : _timeMinutes(calculatedEndTime)) ??
+        (booking.appointmentEndTime == null
+            ? null
+            : _timeMinutes(booking.appointmentEndTime!));
+    final bookingDuration = bookingEnd != null && bookingStart != null
+        ? bookingEnd - bookingStart
+        : serviceDuration ?? 30;
+    if (bookingStart == null || bookingDuration <= 0) return true;
+    final occupiedEnd = bookingStart + bookingDuration;
+    return requestedStart < occupiedEnd && requestedEnd > bookingStart;
   });
+}
+
+bool _slotClosed(
+  BookingSchedule schedule,
+  DateTime date,
+  String time,
+  int durationMinutes,
+) {
+  final slotStart = _timeMinutes(time);
+  if (slotStart == null || durationMinutes <= 0) return true;
+  final slotEnd = slotStart + durationMinutes;
+  for (final closure in schedule.closures) {
+    if (!closure.includes(date)) continue;
+    final closedStart = closure.startTime == null
+        ? null
+        : _timeMinutes(closure.startTime!);
+    final closedEnd = closure.endTime == null
+        ? null
+        : _timeMinutes(closure.endTime!);
+    if (closedStart == null || closedEnd == null) return true;
+    if (slotStart < closedEnd && slotEnd > closedStart) return true;
+  }
+  return false;
 }
 
 bool _slotPast(DateTime date, String time, DateTime now) {

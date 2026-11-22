@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_controller.dart';
 import '../auth/application/patient_auth_scope.dart';
 import '../auth/domain/patient_session.dart';
@@ -51,13 +52,31 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
   PatientAuthController? _controller;
   AppointmentHistoryRepository? _repository;
   List<AppointmentHistoryRecord> _records = const [];
+  int _totalItems = 0;
+  int _totalPages = 1;
   AppointmentHistoryPresentationState _loadState =
       AppointmentHistoryPresentationState.ready;
   String? _errorMessage;
   String? _requestedSessionKey;
-  Timer? _refreshTimer;
+  void Function()? _appointmentsListenerCleanup;
+  void Function()? _connectionListenerCleanup;
   bool _requestInProgress = false;
+  bool _refreshPending = false;
   int _loadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final realtime = PatientRealtimeService.instance;
+    _appointmentsListenerCleanup = realtime.listenToPatientData(
+      'appointments',
+      _refreshAppointments,
+    );
+    _connectionListenerCleanup = realtime.listen(
+      'realtime:connected',
+      (_) => _refreshAppointments(),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -83,9 +102,10 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
     super.didUpdateWidget(oldWidget);
     if (widget.appointments != oldWidget.appointments) {
       _records = widget.appointments ?? const [];
+      _totalItems = _records.length;
+      final pageCount = (_totalItems / _pageSize).ceil();
+      _totalPages = pageCount < 1 ? 1 : pageCount;
       _currentPage = 1;
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
     }
   }
 
@@ -93,7 +113,9 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
   void dispose() {
     _loadGeneration++;
     _requestInProgress = false;
-    _refreshTimer?.cancel();
+    _refreshPending = false;
+    _appointmentsListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
     _controller?.removeListener(_handleSessionChange);
     super.dispose();
   }
@@ -107,11 +129,10 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
   void _loadForCurrentSession() {
     final repository = _repository;
     if (repository == null) {
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
       _requestedSessionKey = null;
       _loadGeneration++;
       _requestInProgress = false;
+      _refreshPending = false;
       if (_loadState !=
           AppointmentHistoryPresentationState.authenticationRequired) {
         setState(() {
@@ -126,10 +147,9 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
     }
     final session = _controller?.currentSession;
     if (session == null) {
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
       _loadGeneration++;
       _requestInProgress = false;
+      _refreshPending = false;
       _requestedSessionKey = null;
       if (_loadState !=
           AppointmentHistoryPresentationState.authenticationRequired) {
@@ -145,19 +165,22 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
     }
     final key = '${session.patientId}\u0000${session.token}';
     if (_requestedSessionKey == key) return;
-    _refreshTimer?.cancel();
     _requestedSessionKey = key;
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _refreshAppointments(),
+    _fetchAppointments(
+      repository,
+      session,
+      ++_loadGeneration,
+      page: _currentPage,
     );
-    _fetchAppointments(repository, session, ++_loadGeneration);
   }
 
   void _refreshAppointments() {
-    if (_requestInProgress ||
-        widget.appointments != null ||
+    if (widget.appointments != null ||
         widget.presentationState != null) {
+      return;
+    }
+    if (_requestInProgress) {
+      _refreshPending = true;
       return;
     }
     final repository = _repository;
@@ -167,6 +190,7 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
       repository,
       session,
       ++_loadGeneration,
+      page: _currentPage,
       silent: true,
     );
   }
@@ -175,7 +199,7 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
     AppointmentHistoryRepository repository,
     PatientSession session,
     int generation,
-    {bool silent = false}
+    {required int page, bool silent = false}
   ) async {
     _requestInProgress = true;
     if (mounted) {
@@ -187,15 +211,20 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
       });
     }
     try {
-      final records = await repository.getAppointments(
+      final result = await repository.getAppointmentPage(
         patientId: session.patientId,
         token: session.token,
+        page: page,
+        limit: _pageSize,
+        filter: _filter.name,
       );
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        _records = records;
+        _records = result.items;
+        _totalItems = result.total;
+        _totalPages = result.totalPages < 1 ? 1 : result.totalPages;
         _loadState = AppointmentHistoryPresentationState.ready;
-        if (!silent) _currentPage = 1;
+        _currentPage = page.clamp(1, _totalPages).toInt();
       });
     } on ApiFailure catch (failure) {
       if (!mounted || generation != _loadGeneration) return;
@@ -222,7 +251,13 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
             'Your appointment history could not be loaded. Please try again.';
       });
     } finally {
-      if (generation == _loadGeneration) _requestInProgress = false;
+      if (generation == _loadGeneration) {
+        _requestInProgress = false;
+        if (_refreshPending && mounted) {
+          _refreshPending = false;
+          _refreshAppointments();
+        }
+      }
     }
   }
 
@@ -231,9 +266,52 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
     _loadForCurrentSession();
   }
 
+  void _changeFilter(AppointmentHistoryFilter filter) {
+    if (filter == _filter) return;
+    setState(() {
+      _filter = filter;
+      _currentPage = 1;
+    });
+
+    if (widget.appointments != null) return;
+    final repository = _repository;
+    final session = _controller?.currentSession;
+    if (repository == null || session == null) return;
+    _fetchAppointments(
+      repository,
+      session,
+      ++_loadGeneration,
+      page: 1,
+    );
+  }
+
+  void _changePage(int page) {
+    final externalRecords = widget.appointments != null;
+    final pageCount = externalRecords
+        ? (_filteredAppointments.length / _pageSize).ceil()
+        : _totalPages;
+    if (page < 1 || page > pageCount) return;
+    if (externalRecords) {
+      setState(() => _currentPage = page);
+      return;
+    }
+
+    final repository = _repository;
+    final session = _controller?.currentSession;
+    if (repository == null || session == null) return;
+    setState(() => _currentPage = page);
+    _fetchAppointments(
+      repository,
+      session,
+      ++_loadGeneration,
+      page: page,
+    );
+  }
+
   List<AppointmentHistoryRecord> get _filteredAppointments {
+    if (widget.appointments == null) return _records;
     final now = widget.now ?? DateTime.now();
-    final source = widget.appointments ?? _records;
+    final source = widget.appointments!;
     final filtered =
         source.where((record) {
           final scheduledAt = record.scheduledAt;
@@ -267,11 +345,18 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
         : compact
         ? 22.0
         : 18.0;
+    final externalRecords = widget.appointments != null;
     final appointments = _filteredAppointments;
-    final pageCount = (appointments.length / _pageSize).ceil();
-    final safePage = pageCount == 0 ? 1 : _currentPage.clamp(1, pageCount);
+    final pageCount = externalRecords
+        ? (appointments.length / _pageSize).ceil()
+        : _totalPages;
+    final safePage = pageCount == 0
+        ? 1
+        : _currentPage.clamp(1, pageCount).toInt();
     final start = (safePage - 1) * _pageSize;
-    final pageAppointments = appointments.skip(start).take(_pageSize).toList();
+    final pageAppointments = externalRecords
+        ? appointments.skip(start).take(_pageSize).toList()
+        : appointments;
 
     if (safePage != _currentPage) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -303,18 +388,17 @@ class _AppointmentHistoryPageState extends State<AppointmentHistoryPage> {
                 presentationState: widget.presentationState ?? _loadState,
                 errorMessage: _errorMessage,
                 onRetry: _retry,
-                onFilterChanged: (filter) {
-                  setState(() {
-                    _filter = filter;
-                    _currentPage = 1;
-                  });
-                },
+                onFilterChanged: _changeFilter,
                 appointments: pageAppointments,
-                hasRecords: appointments.isNotEmpty,
+                hasRecords: externalRecords
+                    ? appointments.isNotEmpty
+                    : _totalItems > 0,
                 page: safePage,
                 pageSize: _pageSize,
-                totalItems: appointments.length,
-                onPageChanged: (page) => setState(() => _currentPage = page),
+                totalItems: externalRecords
+                    ? appointments.length
+                    : _totalItems,
+                onPageChanged: _changePage,
                 onOpenDetails: _showDetails,
               ),
             ],
@@ -689,8 +773,14 @@ class _PaginationBar extends StatelessWidget {
     final secondary = theme.extension<PatientPortalTextColors>()!.secondary;
     final compact = MediaQuery.sizeOf(context).width <= 800;
     final totalPages = (totalItems / pageSize).ceil();
-    final start = (page - 1) * pageSize + 1;
-    final end = (page * pageSize).clamp(0, totalItems);
+    final start = totalItems == 0 ? 0 : (page - 1) * pageSize + 1;
+    final end = (page * pageSize).clamp(0, totalItems).toInt();
+    final pageNumbers = totalPages <= 5
+        ? List<int>.generate(totalPages, (index) => index + 1)
+        : (<int>{1, page - 1, page, page + 1, totalPages}
+              .where((number) => number >= 1 && number <= totalPages)
+              .toList()
+            ..sort());
 
     return Container(
       padding: EdgeInsets.fromLTRB(
@@ -731,13 +821,22 @@ class _PaginationBar extends StatelessWidget {
                 compact: compact,
                 onPressed: () => onPageChanged(page - 1),
               ),
-              for (var number = 1; number <= totalPages; number++)
+              for (var index = 0; index < pageNumbers.length; index++) ...[
+                if (index > 0 &&
+                    pageNumbers[index] - pageNumbers[index - 1] > 1)
+                  Text(
+                    '...',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: secondary,
+                    ),
+                  ),
                 _PageNumberButton(
-                  number: number,
-                  active: number == page,
+                  number: pageNumbers[index],
+                  active: pageNumbers[index] == page,
                   compact: compact,
-                  onPressed: () => onPageChanged(number),
+                  onPressed: () => onPageChanged(pageNumbers[index]),
                 ),
+              ],
               _PagerButton(
                 label: 'Next',
                 enabled: page < totalPages,

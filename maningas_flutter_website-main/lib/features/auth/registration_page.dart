@@ -56,6 +56,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
   @override
   void initState() {
     super.initState();
+    _focusNodes['middleName']!.addListener(_formatMiddleInitialOnBlur);
     unawaited(_loadAddressCatalog());
   }
 
@@ -74,6 +75,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
   void dispose() {
     if (_ownsController) _authController?.dispose();
     _pageScrollController.dispose();
+    _focusNodes['middleName']!.removeListener(_formatMiddleInitialOnBlur);
     for (final controller in _controllers.values) {
       controller.dispose();
     }
@@ -84,6 +86,21 @@ class _RegistrationPageState extends State<RegistrationPage> {
   }
 
   String _value(String id) => _controllers[id]!.text;
+
+  void _formatMiddleInitialOnBlur() {
+    final focusNode = _focusNodes['middleName']!;
+    if (focusNode.hasFocus) return;
+
+    final controller = _controllers['middleName']!;
+    final formatted = formatPatientMiddleName(controller.text);
+    if (formatted == controller.text) return;
+
+    controller.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    _handleInputChanged('middleName', formatted);
+  }
 
   void _handleInputChanged(String id, String value) {
     setState(() {
@@ -217,12 +234,18 @@ class _RegistrationPageState extends State<RegistrationPage> {
       }
     }
 
-    void validateName(String id, String label, {required bool isRequired}) {
+    void validateName(
+      String id,
+      String label, {
+      required bool isRequired,
+      bool allowSingleCharacter = false,
+    }) {
       final name = _value(id).trim();
       if (isRequired && name.isEmpty) {
         errors[id] = 'Please enter $label.';
       } else if (name.isNotEmpty &&
-          (name.length < 2 || !isValidPatientName(name))) {
+          ((!allowSingleCharacter && name.length < 2) ||
+              !isValidPatientName(name))) {
         errors[id] =
             'Use letters, spaces, apostrophes, periods, or hyphens for $label.';
       }
@@ -231,7 +254,12 @@ class _RegistrationPageState extends State<RegistrationPage> {
     validateName('firstName', 'your first name', isRequired: true);
     final middleName = _value('middleName').trim();
     if (middleName.isNotEmpty) {
-      validateName('middleName', 'your middle name', isRequired: false);
+      validateName(
+        'middleName',
+        'your middle name',
+        isRequired: false,
+        allowSingleCharacter: true,
+      );
     }
     validateName('lastName', 'your last name', isRequired: true);
 
@@ -287,10 +315,11 @@ class _RegistrationPageState extends State<RegistrationPage> {
     final email = _value('email').trim();
     if (email.isEmpty) {
       errors['email'] = 'Please enter your email address.';
-    } else if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+    } else if (!isValidPatientEmail(email)) {
       errors['email'] = 'Please enter a valid email address.';
-    } else if (!isAcceptedPatientEmail(email)) {
-      errors['email'] = 'Please use a Gmail address ending in @gmail.com.';
+    } else if (isDisposablePatientEmail(email)) {
+      errors['email'] =
+          'Temporary or disposable email addresses are not allowed. Please use a regular email address.';
     }
 
     final password = _value('password');

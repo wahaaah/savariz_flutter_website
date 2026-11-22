@@ -2,15 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/config/api_config.dart';
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
 import '../../core/network/api_failure.dart';
+import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_controller.dart';
 import '../auth/application/patient_auth_scope.dart';
 import '../auth/domain/patient_session.dart';
 import 'support_center_repository.dart';
-import 'support_image_input.dart';
 import 'support_ticket.dart';
 
 class SupportCenterPage extends StatefulWidget {
@@ -25,13 +24,12 @@ class SupportCenterPage extends StatefulWidget {
 class _SupportCenterPageState extends State<SupportCenterPage> {
   final List<SupportTicket> _tickets = [];
   String? _selectedTicketId;
+  int _ticketPage = 1;
+  int _ticketTotal = 0;
+  int _ticketTotalPages = 1;
   final _messageController = TextEditingController();
-  late final SupportImageInput _imageInput;
-  SupportImageAttachment? _pendingImage;
   PatientAuthController? _controller;
   SupportCenterRepository? _repository;
-  Timer? _statusTimer;
-  Timer? _ticketRefreshTimer;
   String? _requestedSessionKey;
   String? _loadError;
   int _loadGeneration = 0;
@@ -41,18 +39,28 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
   bool _isCancelling = false;
   bool _isRefreshingStatus = false;
   bool _isRefreshingInbox = false;
+  void Function()? _supportListenerCleanup;
+  void Function()? _connectionListenerCleanup;
 
   @override
   void initState() {
     super.initState();
     _tickets.addAll(widget.tickets ?? const []);
-    _imageInput = SupportImageInput(
-      canPaste: _canPasteImage,
-      onImage: _handlePastedImage,
-      onError: (message) {
-        if (mounted) _showNotice(message);
-      },
-    );
+    final realtime = PatientRealtimeService.instance;
+    _supportListenerCleanup = realtime.listen('support:changed', (_) {
+      if (_selectedTicketId != null) {
+        unawaited(_refreshSelectedTicket());
+      } else {
+        unawaited(_refreshTicketInbox());
+      }
+    });
+    _connectionListenerCleanup = realtime.listen('realtime:connected', (_) {
+      if (_selectedTicketId != null) {
+        unawaited(_refreshSelectedTicket());
+      } else {
+        unawaited(_refreshTicketInbox());
+      }
+    });
   }
 
   @override
@@ -75,9 +83,8 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
   @override
   void dispose() {
     _loadGeneration++;
-    _statusTimer?.cancel();
-    _ticketRefreshTimer?.cancel();
-    _imageInput.dispose();
+    _supportListenerCleanup?.call();
+    _connectionListenerCleanup?.call();
     _controller?.removeListener(_handleSessionChange);
     _messageController.dispose();
     super.dispose();
@@ -103,8 +110,6 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
     final repository = _repository;
     final session = _session;
     if (repository == null || session == null) {
-      _statusTimer?.cancel();
-      _ticketRefreshTimer?.cancel();
       _requestedSessionKey = null;
       if (mounted) {
         setState(() {
@@ -121,17 +126,7 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
     final key = '${session.patientId}\u0000${session.token}';
     if (_requestedSessionKey == key) return;
     _requestedSessionKey = key;
-    _startTicketRefresh();
     unawaited(_loadTickets());
-  }
-
-  void _startTicketRefresh() {
-    _ticketRefreshTimer?.cancel();
-    if (_selectedTicketId != null || _session == null) return;
-    _ticketRefreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => unawaited(_refreshTicketInbox()),
-    );
   }
 
   Future<void> _refreshTicketInbox() async {
@@ -141,14 +136,22 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
     if (repository == null || session == null) return;
     _isRefreshingInbox = true;
     try {
-      final tickets = await repository.getMyTickets(
+      final result = await repository.getMyTickets(
         patientId: session.patientId,
         token: session.token,
+        page: _ticketPage,
+        limit: 10,
       );
       final currentSession = _session;
       if (!mounted ||
           currentSession?.patientId != session.patientId ||
           currentSession?.token != session.token) {
+        return;
+      }
+      final pageCount = result.totalPages < 1 ? 1 : result.totalPages;
+      if (_ticketPage > pageCount) {
+        setState(() => _ticketPage = pageCount);
+        unawaited(_loadTickets());
         return;
       }
       setState(() {
@@ -158,11 +161,13 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
         _tickets
           ..clear()
           ..addAll([
-            for (final ticket in tickets)
+            for (final ticket in result.tickets)
               ticket.withMessages(
                 messagesByTicketId[ticket.id] ?? ticket.messages,
               ),
           ]);
+        _ticketTotal = result.total;
+        _ticketTotalPages = pageCount;
         _loadError = null;
       });
     } on ApiFailure catch (failure) {
@@ -196,11 +201,19 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
       _loadError = null;
     });
     try {
-      final tickets = await repository.getMyTickets(
+      final result = await repository.getMyTickets(
         patientId: session.patientId,
         token: session.token,
+        page: _ticketPage,
+        limit: 10,
       );
       if (!mounted || generation != _loadGeneration) return;
+      final pageCount = result.totalPages < 1 ? 1 : result.totalPages;
+      if (_ticketPage > pageCount) {
+        setState(() => _ticketPage = pageCount);
+        await _loadTickets();
+        return;
+      }
       setState(() {
         final messagesByTicketId = {
           for (final ticket in _tickets) ticket.id: ticket.messages,
@@ -208,16 +221,17 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
         _tickets
           ..clear()
           ..addAll([
-            for (final ticket in tickets)
+            for (final ticket in result.tickets)
               ticket.withMessages(
                 messagesByTicketId[ticket.id] ?? ticket.messages,
               ),
           ]);
+        _ticketTotal = result.total;
+        _ticketTotalPages = pageCount;
         _isLoading = false;
         if (_selectedTicketId != null &&
             !_tickets.any((ticket) => ticket.id == _selectedTicketId)) {
           _selectedTicketId = null;
-          _statusTimer?.cancel();
         }
       });
       final selected = _selectedTicket;
@@ -254,14 +268,15 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
       final session = _session;
       final repository = _repository;
       if (selectedId == null || session == null || repository == null) return;
-      final latestTickets = await repository.getMyTickets(
+      final latestPage = await repository.getMyTickets(
         patientId: session.patientId,
         token: session.token,
+        page: _ticketPage,
+        limit: 10,
       );
       if (!mounted || selectedId != _selectedTicketId) return;
-      final previous = _selectedTicket;
       SupportTicket? latest;
-      for (final ticket in latestTickets) {
+      for (final ticket in latestPage.tickets) {
         if (ticket.id == selectedId) {
           latest = ticket;
           break;
@@ -274,24 +289,21 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
         _tickets
           ..clear()
           ..addAll([
-            for (final ticket in latestTickets)
+            for (final ticket in latestPage.tickets)
               ticket.withMessages(
                 messagesByTicketId[ticket.id] ?? ticket.messages,
               ),
           ]);
+        _ticketTotal = latestPage.total;
+        _ticketTotalPages = latestPage.totalPages < 1
+            ? 1
+            : latestPage.totalPages;
         if (latest == null) _selectedTicketId = null;
       });
       if (latest == null) {
-        _statusTimer?.cancel();
         return;
       }
-      if (previous?.status != latest.status ||
-          previous?.updatedAt != latest.updatedAt) {
-        await _loadMessages(latest, preserveError: true);
-      }
-      if (['resolved', 'closed'].contains(latest.status.toLowerCase())) {
-        _statusTimer?.cancel();
-      }
+      await _loadMessages(latest, preserveError: true);
     } on ApiFailure catch (failure) {
       debugPrint('Unable to refresh support ticket status: ${failure.message}');
     } on FormatException catch (error, stackTrace) {
@@ -309,18 +321,9 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
   }
 
   void _selectTicket(SupportTicket ticket) {
-    _ticketRefreshTimer?.cancel();
-    setState(() {
-      _selectedTicketId = ticket.id;
-      _pendingImage = null;
-    });
+    setState(() => _selectedTicketId = ticket.id);
     _messageController.clear();
-    _statusTimer?.cancel();
     unawaited(_loadMessages(ticket));
-    _statusTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => unawaited(_refreshSelectedTicket()),
-    );
   }
 
   Future<void> _loadMessages(
@@ -467,9 +470,8 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
       await repository.cancelTicket(token: session.token, ticketId: ticket.id);
       if (_selectedTicketId == ticket.id) {
         _selectedTicketId = null;
-        _statusTimer?.cancel();
-        _startTicketRefresh();
       }
+      await _refreshTicketInbox();
       await _loadTickets();
       if (mounted) _showNotice('Support ticket cancelled.');
     } on ApiFailure catch (failure) {
@@ -486,11 +488,10 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
     final session = _session;
     final repository = _repository;
     final message = _messageController.text.trim();
-    final attachment = _pendingImage;
     if (ticket == null ||
         session == null ||
         repository == null ||
-        (message.isEmpty && attachment == null)) {
+        message.isEmpty) {
       return;
     }
 
@@ -504,11 +505,9 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
         token: session.token,
         ticketId: ticket.id,
         message: message,
-        attachment: attachment,
       );
-      if (mounted && _selectedTicketId == ticket.id) {
+      if (_selectedTicketId == ticket.id) {
         _messageController.clear();
-        setState(() => _pendingImage = null);
         await _loadMessages(ticket, preserveError: true);
       }
     } on ApiFailure catch (failure) {
@@ -519,40 +518,17 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
   }
 
   void _backToTickets() {
-    _statusTimer?.cancel();
+    setState(() => _selectedTicketId = null);
+    unawaited(_refreshTicketInbox());
+  }
+
+  void _changeTicketPage(int page) {
+    if (page < 1 || page > _ticketTotalPages || page == _ticketPage) return;
     setState(() {
+      _ticketPage = page;
       _selectedTicketId = null;
-      _pendingImage = null;
     });
-    _startTicketRefresh();
-  }
-
-  bool _canPasteImage() {
-    final ticket = _selectedTicket;
-    return mounted && !_isSending && ticket != null && _canSendMessage(ticket);
-  }
-
-  void _handlePastedImage(SupportImageAttachment image) {
-    if (!_canPasteImage()) return;
-    setState(() => _pendingImage = image);
-  }
-
-  Future<void> _pickImage() async {
-    if (!_canPasteImage()) return;
-    try {
-      final image = await _imageInput.pickImage();
-      if (mounted && image != null && _canPasteImage()) {
-        setState(() => _pendingImage = image);
-      }
-    } on FormatException catch (error) {
-      if (mounted) _showNotice(error.message);
-    } on StateError catch (error) {
-      if (mounted) _showNotice(error.message);
-    }
-  }
-
-  void _removePendingImage() {
-    setState(() => _pendingImage = null);
+    unawaited(_loadTickets());
   }
 
   void _showNotice(String message) {
@@ -607,11 +583,8 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
                           messageController: _messageController,
                           isLoading: _isLoadingMessages,
                           isSending: _isSending,
-                          pendingImage: _pendingImage,
                           onBack: _backToTickets,
                           onSend: _sendMessage,
-                          onPickImage: _pickImage,
-                          onRemoveImage: _removePendingImage,
                         )
                       : _InboxPanel(
                           tickets: _tickets,
@@ -622,6 +595,10 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
                           isCancelling: _isCancelling,
                           onRefresh: _loadTickets,
                           onCancel: _cancelTicket,
+                          currentPage: _ticketPage,
+                          totalPages: _ticketTotalPages,
+                          totalTickets: _ticketTotal,
+                          onPageChange: _changeTicketPage,
                         ),
                 )
               else
@@ -643,6 +620,10 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
                           isCancelling: _isCancelling,
                           onRefresh: _loadTickets,
                           onCancel: _cancelTicket,
+                          currentPage: _ticketPage,
+                          totalPages: _ticketTotalPages,
+                          totalTickets: _ticketTotal,
+                          onPageChange: _changeTicketPage,
                         ),
                       ),
                       const SizedBox(width: 18),
@@ -653,11 +634,8 @@ class _SupportCenterPageState extends State<SupportCenterPage> {
                           messageController: _messageController,
                           isLoading: _isLoadingMessages,
                           isSending: _isSending,
-                          pendingImage: _pendingImage,
                           onBack: () {},
                           onSend: _sendMessage,
-                          onPickImage: _pickImage,
-                          onRemoveImage: _removePendingImage,
                         ),
                       ),
                     ],
@@ -795,6 +773,10 @@ class _InboxPanel extends StatelessWidget {
     required this.isCancelling,
     required this.onRefresh,
     required this.onCancel,
+    required this.currentPage,
+    required this.totalPages,
+    required this.totalTickets,
+    required this.onPageChange,
   });
 
   final List<SupportTicket> tickets;
@@ -805,6 +787,10 @@ class _InboxPanel extends StatelessWidget {
   final bool isCancelling;
   final VoidCallback onRefresh;
   final ValueChanged<SupportTicket> onCancel;
+  final int currentPage;
+  final int totalPages;
+  final int totalTickets;
+  final ValueChanged<int> onPageChange;
 
   @override
   Widget build(BuildContext context) {
@@ -837,6 +823,41 @@ class _InboxPanel extends StatelessWidget {
                           fontSize: 11,
                         ),
                       ),
+                      if (totalTickets > 0) ...[
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '$totalTickets tickets • Page $currentPage of $totalPages',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: secondary,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Previous page',
+                                onPressed: currentPage > 1
+                                    ? () => onPageChange(currentPage - 1)
+                                    : null,
+                                icon: const Icon(Icons.chevron_left),
+                              ),
+                              IconButton(
+                                tooltip: 'Next page',
+                                onPressed: currentPage < totalPages
+                                    ? () => onPageChange(currentPage + 1)
+                                    : null,
+                                icon: const Icon(Icons.chevron_right),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1002,11 +1023,8 @@ class _ConversationPanel extends StatelessWidget {
     required this.messageController,
     required this.isLoading,
     required this.isSending,
-    required this.pendingImage,
     required this.onBack,
     required this.onSend,
-    required this.onPickImage,
-    required this.onRemoveImage,
   });
 
   final SupportTicket? ticket;
@@ -1014,11 +1032,8 @@ class _ConversationPanel extends StatelessWidget {
   final TextEditingController messageController;
   final bool isLoading;
   final bool isSending;
-  final SupportImageAttachment? pendingImage;
   final VoidCallback onBack;
   final VoidCallback onSend;
-  final VoidCallback onPickImage;
-  final VoidCallback onRemoveImage;
 
   @override
   Widget build(BuildContext context) {
@@ -1124,10 +1139,7 @@ class _ConversationPanel extends StatelessWidget {
             controller: messageController,
             enabled: canSend,
             isSending: isSending,
-            pendingImage: pendingImage,
             onSend: onSend,
-            onPickImage: onPickImage,
-            onRemoveImage: onRemoveImage,
           ),
         ],
       ),
@@ -1140,120 +1152,55 @@ class _MessageComposer extends StatelessWidget {
     required this.controller,
     required this.enabled,
     required this.isSending,
-    required this.pendingImage,
     required this.onSend,
-    required this.onPickImage,
-    required this.onRemoveImage,
   });
 
   final TextEditingController controller;
   final bool enabled;
   final bool isSending;
-  final SupportImageAttachment? pendingImage;
   final VoidCallback onSend;
-  final VoidCallback onPickImage;
-  final VoidCallback onRemoveImage;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (pendingImage != null) ...[
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                border: Border.all(color: theme.colorScheme.outline),
-                borderRadius: BorderRadius.circular(10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              enabled: enabled,
+              minLines: 1,
+              maxLines: 4,
+              maxLength: 2000,
+              decoration: const InputDecoration(
+                hintText: 'Type your message...',
+                labelText: 'Type your support message',
+                counterText: '',
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
               ),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: Image.memory(
-                      pendingImage!.bytes,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      pendingImage!.fileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Remove image',
-                    onPressed: onRemoveImage,
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
+              onSubmitted: enabled ? (_) => onSend() : null,
             ),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              IconButton(
-                tooltip: 'Attach image',
-                onPressed: enabled ? onPickImage : null,
-                icon: const Icon(Icons.attach_file),
-              ),
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  enabled: enabled,
-                  minLines: 1,
-                  maxLines: 4,
-                  maxLength: 5000,
-                  decoration: const InputDecoration(
-                    hintText: 'Type your message...',
-                    labelText: 'Type your support message',
-                    counterText: '',
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                  ),
-                  onSubmitted: enabled ? (_) => onSend() : null,
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed: enabled ? onSend : null,
-                  child: Text(isSending ? 'Sending...' : 'Send'),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.lock_outline,
-                size: 14,
-                color: theme.disabledColor.withValues(alpha: 0.65),
-              ),
-            ],
           ),
-          if (enabled)
-            Padding(
-              padding: const EdgeInsets.only(left: 8, top: 5),
-              child: Text(
-                'Paste an image here or attach one.',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.extension<PatientPortalTextColors>()!.secondary,
-                ),
-              ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 48,
+            child: FilledButton(
+              onPressed: enabled ? onSend : null,
+              child: Text(isSending ? 'Sending...' : 'Send'),
             ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.lock_outline,
+            size: 14,
+            color: theme.disabledColor.withValues(alpha: 0.65),
+          ),
         ],
       ),
     );
@@ -1293,21 +1240,13 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (message.attachmentUrl != null)
-              _SupportMessageImage(
-                url: message.attachmentUrl!,
-                name: message.attachmentName,
+            Text(
+              message.body,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: message.isMine ? Colors.white : null,
+                height: 1.6,
               ),
-            if (message.body.isNotEmpty) ...[
-              if (message.attachmentUrl != null) const SizedBox(height: 8),
-              Text(
-                message.body,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: message.isMine ? Colors.white : null,
-                  height: 1.6,
-                ),
-              ),
-            ],
+            ),
             const SizedBox(height: 6),
             Text(
               '${message.senderName} · ${_formatDateTime(context, message.sentAt)}',
@@ -1323,68 +1262,6 @@ class _MessageBubble extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SupportMessageImage extends StatelessWidget {
-  const _SupportMessageImage({required this.url, this.name});
-
-  final String url;
-  final String? name;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final uri = _supportImageUri(url);
-    if (uri == null) {
-      return Text(
-        name == null
-            ? 'Image attachment unavailable.'
-            : '$name is unavailable.',
-        style: theme.textTheme.bodySmall,
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        uri.toString(),
-        width: 250,
-        height: 190,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => SizedBox(
-          width: 220,
-          height: 80,
-          child: Center(
-            child: Text(
-              'Unable to load image attachment.',
-              style: theme.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-Uri? _supportImageUri(String value) {
-  final parsed = Uri.tryParse(value);
-  if (parsed == null ||
-      parsed.userInfo.isNotEmpty ||
-      (parsed.hasAuthority && !parsed.hasScheme)) {
-    return null;
-  }
-
-  final uri = parsed.hasScheme ? parsed : ApiConfig.baseUri.resolveUri(parsed);
-  final isLocalHttp =
-      uri.scheme == 'http' &&
-      const {'localhost', '127.0.0.1', '::1'}.contains(uri.host);
-  if ((uri.scheme != 'https' && !isLocalHttp) ||
-      uri.host.isEmpty ||
-      uri.userInfo.isNotEmpty) {
-    return null;
-  }
-  return uri;
 }
 
 class _StatusBadge extends StatelessWidget {

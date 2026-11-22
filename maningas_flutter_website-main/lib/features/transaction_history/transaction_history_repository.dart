@@ -3,39 +3,68 @@ import '../../../core/network/api_failure.dart';
 import 'transaction_record.dart';
 
 abstract interface class TransactionHistoryRepository {
-  Future<List<TransactionRecord>> getTransactions({
+  Future<TransactionHistoryPageResult> getTransactions({
     required String patientId,
     required String token,
+    required int page,
+    required int limit,
   });
 }
 
-class ApiTransactionHistoryRepository
-    implements TransactionHistoryRepository {
+class TransactionHistoryPageResult {
+  const TransactionHistoryPageResult({
+    required this.items,
+    required this.total,
+    required this.totalPages,
+  });
+
+  final List<TransactionRecord> items;
+  final int total;
+  final int totalPages;
+}
+
+class ApiTransactionHistoryRepository implements TransactionHistoryRepository {
   const ApiTransactionHistoryRepository(this._apiClient);
 
   final ApiClient _apiClient;
 
   @override
-  Future<List<TransactionRecord>> getTransactions({
+  Future<TransactionHistoryPageResult> getTransactions({
     required String patientId,
     required String token,
+    required int page,
+    required int limit,
   }) async {
     try {
       final response = await _apiClient.getJson(
-        '/api/patients/${Uri.encodeComponent(patientId)}/transactions',
+        '/api/patients/${Uri.encodeComponent(patientId)}/transactions'
+        '?page=$page&limit=$limit',
         headers: {'Authorization': 'Bearer $token'},
       );
-      if (response['success'] != true || response['transactions'] is! List) {
+      final rows = response['transactions'];
+      final pagination = response['pagination'];
+      if (response['success'] != true ||
+          rows is! List<Object?> ||
+          pagination is! Map<String, dynamic>) {
         throw const FormatException('Invalid transaction history response.');
       }
       final records = <TransactionRecord>[];
-      for (final row in response['transactions'] as List) {
+      for (final row in rows) {
         if (row is! Map<String, dynamic>) {
           throw const FormatException('Invalid transaction record.');
         }
         records.add(TransactionRecord.fromJson(row));
       }
-      return records;
+      final total = _parsePaginationInteger(pagination['total']);
+      final totalPages = _parsePaginationInteger(pagination['totalPages']);
+      if (total == null || totalPages == null) {
+        throw const FormatException('Invalid transaction pagination metadata.');
+      }
+      return TransactionHistoryPageResult(
+        items: records,
+        total: total,
+        totalPages: totalPages,
+      );
     } on FormatException {
       throw const ApiFailure(
         kind: ApiFailureKind.invalidResponse,
@@ -54,5 +83,13 @@ class ApiTransactionHistoryRepository
       }
       rethrow;
     }
+  }
+
+  int? _parsePaginationInteger(Object? value) {
+    if (value is int && value >= 0) return value;
+    if (value is num && value >= 0 && value == value.toInt()) {
+      return value.toInt();
+    }
+    return null;
   }
 }
