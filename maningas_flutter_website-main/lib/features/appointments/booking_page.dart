@@ -1578,7 +1578,7 @@ bool _slotClosed(
         ? null
         : _timeMinutes(closure.endTime!);
     if (closedStart == null || closedEnd == null) return true;
-    if (slotStart < closedEnd && slotEnd > closedStart) return true;
+    if (slotStart < closedEnd && slotEnd >= closedStart) return true;
   }
   return false;
 }
