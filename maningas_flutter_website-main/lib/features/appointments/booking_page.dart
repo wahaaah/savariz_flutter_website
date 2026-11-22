@@ -384,6 +384,7 @@ class _BookingPageState extends State<BookingPage> {
     final duration = _serviceDuration(_schedule, _purpose) ?? 30;
     return _slots.every(
       (time) =>
+          !_isServiceStartAligned(time, duration) ||
           _slotPast(date, time, _now) ||
           _endTime(time, duration) == null ||
           _slotBooked(_schedule, date, time, duration) ||
@@ -1050,6 +1051,7 @@ class _DetailsCard extends StatelessWidget {
         : slots.where((time) {
             return !_slotPast(selected, time, now) &&
                 duration != null &&
+                _isServiceStartAligned(time, duration) &&
                 _endTime(time, duration) != null &&
                 !_slotBooked(schedule, selected, time, duration) &&
                 !_slotClosed(schedule, selected, time, duration);
@@ -1144,7 +1146,7 @@ class _DetailsCard extends StatelessWidget {
                     Text(
                       purpose == null
                           ? 'Select a service first'
-                          : '$duration-minute appointment',
+                          : '$duration-minute appointment · starts every $duration minutes',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: secondary,
                       ),
@@ -1501,6 +1503,13 @@ int? _timeMinutes(String time) {
   final minutes = int.parse(match.group(2)!);
   if (hours > 23 || minutes > 59) return null;
   return hours * 60 + minutes;
+}
+
+bool _isServiceStartAligned(String time, int durationMinutes) {
+  final timeMinutes = _timeMinutes(time);
+  return timeMinutes != null &&
+      durationMinutes > 0 &&
+      (timeMinutes - 8 * 60) % durationMinutes == 0;
 }
 
 String? _endTime(String startTime, int durationMinutes) {
