@@ -93,7 +93,10 @@ class _RegistrationPageState extends State<RegistrationPage> {
 
     final controller = _controllers['middleName']!;
     final formatted = formatPatientMiddleName(controller.text);
-    if (formatted == controller.text) return;
+    if (formatted == controller.text ||
+        formatted.length > patientRegistrationNameMaxLength) {
+      return;
+    }
 
     controller.value = TextEditingValue(
       text: formatted,
@@ -243,6 +246,9 @@ class _RegistrationPageState extends State<RegistrationPage> {
       final name = _value(id).trim();
       if (isRequired && name.isEmpty) {
         errors[id] = 'Please enter $label.';
+      } else if (name.length > patientRegistrationNameMaxLength) {
+        errors[id] =
+            '$label must be $patientRegistrationNameMaxLength characters or fewer.';
       } else if (name.isNotEmpty &&
           ((!allowSingleCharacter && name.length < 2) ||
               !isValidPatientName(name))) {
@@ -287,10 +293,10 @@ class _RegistrationPageState extends State<RegistrationPage> {
     }
     requiredText('contact', 'your contact number');
     final contact = _value('contact').trim();
-    if (contact.isNotEmpty &&
-        !RegExp(r'^(\+63|0)9\d{9}$')
-            .hasMatch(contact.replaceAll(RegExp(r'[\s-]'), ''))) {
-      errors['contact'] = 'Please enter a valid Philippine mobile number.';
+    if (contact.isNotEmpty && !isValidPatientContactNumber(contact)) {
+      errors['contact'] =
+          'Enter a valid Philippine mobile number with no more than '
+          '$patientRegistrationContactMaxLength characters.';
     }
 
     requiredText('addressUnit', 'your house, unit, lot, or block');
@@ -1132,7 +1138,7 @@ class _RegistrationFormPanel extends StatelessWidget {
             label: 'First Name *',
             hint: 'First name',
             autocomplete: 'given-name',
-            maxLength: 50,
+            maxLength: patientRegistrationNameMaxLength,
             inputFormatters: [_nameInputFormatter],
           ),
           _textField(
@@ -1140,7 +1146,7 @@ class _RegistrationFormPanel extends StatelessWidget {
             label: 'Middle Name',
             hint: 'Middle name',
             autocomplete: 'additional-name',
-            maxLength: 50,
+            maxLength: patientRegistrationNameMaxLength,
             inputFormatters: [_nameInputFormatter],
           ),
         ]),
@@ -1150,7 +1156,7 @@ class _RegistrationFormPanel extends StatelessWidget {
           label: 'Last Name *',
           hint: 'Last name',
           autocomplete: 'family-name',
-          maxLength: 50,
+          maxLength: patientRegistrationNameMaxLength,
           inputFormatters: [_nameInputFormatter],
         ),
         const SizedBox(height: 18),
@@ -1199,8 +1205,11 @@ class _RegistrationFormPanel extends StatelessWidget {
           hint: '09XXXXXXXXX',
           help: 'Example: 09171234567',
           keyboardType: TextInputType.phone,
+          maxLength: patientRegistrationContactMaxLength,
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s-]')),
+          ],
           autocomplete: 'tel',
-          maxLength: 20,
         ),
         const SizedBox(height: 18),
         const _RequiredGroupLabel('Address *'),

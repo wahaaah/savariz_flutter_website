@@ -1,3 +1,6 @@
+const patientRegistrationNameMaxLength = 20;
+const patientRegistrationContactMaxLength = 16;
+
 const _disposablePatientEmailDomains = <String>{
   '10minutemail.com',
   '10minutemail.net',
@@ -25,13 +28,23 @@ const _disposablePatientEmailDomains = <String>{
   'tempr.email',
 };
 
-bool isValidPatientName(String value) => RegExp(
-  r"^[\p{L}\p{M}]+(?:[ .'-]*[\p{L}\p{M}]+)*[.'-]?$",
-  unicode: true,
-).hasMatch(value.trim());
+bool isValidPatientName(String value) =>
+    value.trim().length <= patientRegistrationNameMaxLength &&
+    RegExp(
+        r"^[\p{L}\p{M}]+(?:[ .'-]*[\p{L}\p{M}]+)*[.'-]?$",
+        unicode: true,
+      ).hasMatch(value.trim());
 
 bool isValidPatientNameInput(String value) =>
     RegExp(r"^[\p{L}\p{M} .'-]*$", unicode: true).hasMatch(value);
+
+bool isValidPatientContactNumber(String value) {
+  final contact = value.trim();
+  return contact.length <= patientRegistrationContactMaxLength &&
+      RegExp(r'^[0-9+\s-]+$').hasMatch(contact) &&
+      RegExp(r'^(\+63|0)9\d{9}$')
+          .hasMatch(contact.replaceAll(RegExp(r'[\s-]'), ''));
+}
 
 String formatPatientMiddleName(String value) {
   final trimmed = value.trim();
@@ -59,18 +72,6 @@ bool isDisposablePatientEmail(String value) {
         domain == blockedDomain || domain.endsWith('.$blockedDomain'),
   );
 }
-
-bool isAcceptedPatientEmail(String value) {
-  if (!isValidPatientEmail(value) || isDisposablePatientEmail(value)) {
-    return false;
-  }
-  final email = value.trim().toLowerCase();
-  final domain = email.split('@').last;
-  return domain == 'gmail.com';
-}
-
-bool isValidPhilippineMobileNumber(String value) =>
-    RegExp(r'^9\d{9}$').hasMatch(value.trim());
 
 bool isValidPatientZipCode(String value) =>
     RegExp(r'^\d{4}$').hasMatch(value.trim());
