@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
+import '../../core/config/api_config.dart';
 import '../../core/network/api_failure.dart';
 import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_controller.dart';
@@ -11,6 +12,27 @@ import '../auth/application/patient_auth_scope.dart';
 import '../auth/domain/patient_session.dart';
 import 'support_center_repository.dart';
 import 'support_ticket.dart';
+
+Uri? _resolveSupportAttachmentUrl(String? value) {
+  final attachmentUrl = value?.trim();
+  if (attachmentUrl == null || attachmentUrl.isEmpty) return null;
+
+  final parsed = Uri.tryParse(attachmentUrl);
+  if (parsed == null || parsed.hasAuthority && !parsed.hasScheme) return null;
+
+  final resolved = parsed.hasScheme
+      ? parsed
+      : ApiConfig.baseUri.resolveUri(parsed);
+  final isLocalHttp =
+      resolved.scheme == 'http' &&
+      const {'localhost', '127.0.0.1', '::1'}.contains(resolved.host);
+  if ((resolved.scheme != 'https' && !isLocalHttp) ||
+      resolved.userInfo.isNotEmpty ||
+      resolved.host.isEmpty) {
+    return null;
+  }
+  return resolved;
+}
 
 class SupportCenterPage extends StatefulWidget {
   const SupportCenterPage({this.tickets, super.key});
@@ -1217,6 +1239,7 @@ class _MessageBubble extends StatelessWidget {
     final theme = Theme.of(context);
     final secondary = theme.extension<PatientPortalTextColors>()!.secondary;
     final primary = theme.colorScheme.primary;
+    final attachmentUrl = _resolveSupportAttachmentUrl(message.attachmentUrl);
     return Align(
       alignment: message.isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -1240,13 +1263,59 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              message.body,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: message.isMine ? Colors.white : null,
-                height: 1.6,
+            if (message.body.trim().isNotEmpty)
+              Text(
+                message.body,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: message.isMine ? Colors.white : null,
+                  height: 1.6,
+                ),
               ),
-            ),
+            if (attachmentUrl != null) ...[
+              if (message.body.trim().isNotEmpty) const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.sizeOf(context).width * 0.58,
+                    maxHeight: 240,
+                  ),
+                  child: Image.network(
+                    attachmentUrl.toString(),
+                    fit: BoxFit.contain,
+                    semanticLabel: message.attachmentName ?? 'Support image',
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const SizedBox(
+                        height: 120,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: MediaQuery.sizeOf(context).width * 0.5,
+                      height: 72,
+                      color: theme.colorScheme.surface,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        'Unable to load attached image.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: secondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ] else if (message.attachmentUrl != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Attached image URL is invalid.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: message.isMine ? Colors.white : secondary,
+                ),
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
               '${message.senderName} · ${_formatDateTime(context, message.sentAt)}',

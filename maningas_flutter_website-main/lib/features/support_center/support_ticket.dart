@@ -4,12 +4,18 @@ class SupportMessage {
     required this.senderName,
     required this.sentAt,
     required this.isMine,
+    this.attachmentUrl,
+    this.attachmentName,
+    this.attachmentMimeType,
   });
 
   final String body;
   final String senderName;
   final DateTime? sentAt;
   final bool isMine;
+  final String? attachmentUrl;
+  final String? attachmentName;
+  final String? attachmentMimeType;
 
   factory SupportMessage.fromJson(
     Map<String, dynamic> json, {
@@ -28,6 +34,18 @@ class SupportMessage {
           (isMine ? 'You' : 'Clinic Support'),
       sentAt: _dateValue(json, const ['created_at', 'createdAt', 'sent_at']),
       isMine: isMine,
+      attachmentUrl: _stringValue(json, const [
+        'attachment_url',
+        'attachmentUrl',
+      ]),
+      attachmentName: _stringValue(json, const [
+        'attachment_name',
+        'attachmentName',
+      ]),
+      attachmentMimeType: _stringValue(json, const [
+        'attachment_mime_type',
+        'attachmentMimeType',
+      ]),
     );
   }
 }
