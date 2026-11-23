@@ -3,11 +3,13 @@ class TransactionLineItem {
     required this.name,
     this.quantity,
     this.unitPrice,
+    this.imageUrl,
   });
 
   final String name;
   final int? quantity;
   final double? unitPrice;
+  final String? imageUrl;
 
   double? get total =>
       quantity == null || unitPrice == null ? null : quantity! * unitPrice!;
@@ -22,6 +24,7 @@ class TransactionLineItem {
           : 'Unknown Item',
       quantity: quantity,
       unitPrice: unitPrice,
+      imageUrl: _optionalString(json['image_url'] ?? json['image_2d_url']),
     );
   }
 }
@@ -68,8 +71,20 @@ class TransactionRecord {
         json['description'] ??
         json['purpose'] ??
         json['category'];
-    final rawStatus =
-        json['payment_status'] ?? json['transaction_status'] ?? json['status'];
+    final transactionStatus = json['transaction_status'];
+    final normalizedTransactionStatus = transactionStatus is String
+        ? transactionStatus.trim()
+        : '';
+    final transactionStatusKey = normalizedTransactionStatus.toLowerCase();
+    final isVoidStatus =
+        transactionStatusKey == 'voided' ||
+        transactionStatusKey == 'pending void';
+    final rawStatus = isVoidStatus
+        ? normalizedTransactionStatus
+        : json['payment_status'] ??
+              (normalizedTransactionStatus.isNotEmpty
+                  ? normalizedTransactionStatus
+                  : json['status']);
 
     return TransactionRecord(
       reference:

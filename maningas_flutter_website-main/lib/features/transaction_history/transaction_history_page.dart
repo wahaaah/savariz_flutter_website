@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/responsive.dart';
 import '../../app/theme.dart';
+import '../../core/config/api_config.dart';
 import '../../core/network/api_failure.dart';
 import '../../core/network/patient_realtime_service.dart';
 import '../auth/application/patient_auth_controller.dart';
@@ -17,6 +18,27 @@ enum TransactionHistoryPresentationState {
   loading,
   error,
   authenticationRequired,
+}
+
+Uri? _resolvePurchasedItemImage(String? value) {
+  final imageUrl = value?.trim();
+  if (imageUrl == null || imageUrl.isEmpty) return null;
+
+  final parsed = Uri.tryParse(imageUrl);
+  if (parsed == null || parsed.hasAuthority && !parsed.hasScheme) return null;
+
+  final resolved = parsed.hasScheme
+      ? parsed
+      : ApiConfig.baseUri.resolveUri(parsed);
+  final isLocalHttp =
+      resolved.scheme == 'http' &&
+      const {'localhost', '127.0.0.1', '::1'}.contains(resolved.host);
+  if ((resolved.scheme != 'https' && !isLocalHttp) ||
+      resolved.userInfo.isNotEmpty ||
+      resolved.host.isEmpty) {
+    return null;
+  }
+  return resolved;
 }
 
 class TransactionHistoryPage extends StatefulWidget {
@@ -910,10 +932,18 @@ class _TransactionCard extends StatelessWidget {
             )
           else
             for (final item in transaction.items) ...[
-              _ChargeRow(
-                label:
-                    '${item.name}${item.quantity == null ? '' : ' × ${item.quantity}'}',
-                value: _formatCurrency(item.total),
+              Row(
+                children: [
+                  _PurchasedItemImage(item: item),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _ChargeRow(
+                      label:
+                          '${item.name}${item.quantity == null ? '' : ' × ${item.quantity}'}',
+                      value: _formatCurrency(item.total),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 7),
             ],
@@ -1057,6 +1087,42 @@ class _ChargeRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _PurchasedItemImage extends StatelessWidget {
+  const _PurchasedItemImage({required this.item});
+
+  final TransactionLineItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final imageUri = _resolvePurchasedItemImage(item.imageUrl);
+    final placeholder = Center(
+      child: Icon(
+        Icons.image_not_supported_outlined,
+        size: 20,
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+      ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 52,
+        height: 52,
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: imageUri == null
+            ? placeholder
+            : Image.network(
+                imageUri.toString(),
+                fit: BoxFit.contain,
+                semanticLabel: item.name,
+                errorBuilder: (_, _, _) => placeholder,
+              ),
+      ),
     );
   }
 }
