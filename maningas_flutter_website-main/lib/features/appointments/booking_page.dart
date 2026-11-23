@@ -32,8 +32,6 @@ class BookingPage extends StatefulWidget {
 }
 
 class _BookingPageState extends State<BookingPage> {
-  final _myAppointmentsKey = GlobalKey();
-
   DateTime get _now => widget.now ?? DateTime.now();
   DateTime get _today => DateTime(_now.year, _now.month, _now.day);
   DateTime get _maxDate => _today.add(const Duration(days: 365));
@@ -82,14 +80,7 @@ class _BookingPageState extends State<BookingPage> {
     );
     if (widget.focusMyAppointments) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final sectionContext = _myAppointmentsKey.currentContext;
-        if (!mounted || sectionContext == null) return;
-        Scrollable.ensureVisible(
-          sectionContext,
-          alignment: 0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
+        if (mounted) _showMyAppointmentsDialog();
       });
     }
   }
@@ -267,6 +258,20 @@ class _BookingPageState extends State<BookingPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _PageHeader(compact: compact),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('my-appointments-button'),
+                  onPressed: _showMyAppointmentsDialog,
+                  icon: const Icon(Icons.event_note_outlined),
+                  label: Text(
+                    _appointments.isEmpty
+                        ? 'My appointments'
+                        : 'My appointments (${_appointments.length})',
+                  ),
+                ),
+              ),
               const SizedBox(height: 20),
               if (_loadError != null || _isLoading)
                 _BookingStatusNotice(
@@ -278,21 +283,14 @@ class _BookingPageState extends State<BookingPage> {
                       : () => _refreshAppointments(force: true),
                 ),
               if (_loadError != null || _isLoading) const SizedBox(height: 18),
-              if (upcomingAppointment != null)
-                _BookingStatusNotice(
-                  message: _upcomingAppointmentMessage(upcomingAppointment),
-                  isError: true,
-                  isLoading: false,
-                  onRetry: null,
-                )
-              else if (_actionMessage != null)
+              if (_actionMessage != null)
                 _BookingStatusNotice(
                   message: _actionMessage!,
                   isError: _actionIsError,
                   isLoading: false,
                   onRetry: null,
                 ),
-              if (upcomingAppointment != null || _actionMessage != null)
+              if (_actionMessage != null)
                 const SizedBox(height: 18),
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -345,14 +343,6 @@ class _BookingPageState extends State<BookingPage> {
                   );
                 },
               ),
-              const SizedBox(height: 18),
-              MyAppointmentsSection(
-                key: _myAppointmentsKey,
-                appointments: _appointments,
-                now: _now,
-                onCancel: _cancelAppointment,
-                isCancelling: _isCancelling,
-              ),
             ],
           ),
         ),
@@ -385,7 +375,6 @@ class _BookingPageState extends State<BookingPage> {
 
   bool _isDateUnavailable(DateTime date) {
     if (!_scheduleLoaded ||
-        _findUpcomingAppointment() != null ||
         date.isBefore(_today) ||
         date.isAfter(_maxDate) ||
         date.weekday == DateTime.sunday ||
@@ -400,6 +389,45 @@ class _BookingPageState extends State<BookingPage> {
           _endTime(time, duration) == null ||
           _slotBooked(_schedule, date, time, duration) ||
           _slotClosed(_schedule, date, time, duration),
+    );
+  }
+
+  void _showMyAppointmentsDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 20,
+          ),
+          child: SizedBox(
+            width: 900,
+            height: MediaQuery.sizeOf(dialogContext).height * 0.82,
+            child: SingleChildScrollView(
+              child: _isLoading && _appointments.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(40),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  : MyAppointmentsSection(
+                      appointments: _appointments,
+                      now: _now,
+                      onCancel: (appointment) async {
+                        await _cancelAppointment(appointment);
+                        if (dialogContext.mounted) {
+                          setDialogState(() {});
+                        }
+                      },
+                      isCancelling: _isCancelling,
+                      onClose: () => Navigator.of(dialogContext).pop(),
+                    ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -436,6 +464,14 @@ class _BookingPageState extends State<BookingPage> {
   }
 
   void _showConfirmation() {
+    final upcomingAppointment = _findUpcomingAppointment();
+    if (upcomingAppointment != null) {
+      _showUpcomingAppointmentDialog(
+        _upcomingAppointmentMessage(upcomingAppointment),
+      );
+      return;
+    }
+
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -482,9 +518,8 @@ class _BookingPageState extends State<BookingPage> {
       return;
     }
     if (upcomingAppointment != null) {
-      _showActionMessage(
+      _showUpcomingAppointmentDialog(
         _upcomingAppointmentMessage(upcomingAppointment),
-        isError: true,
       );
       return;
     }
@@ -529,6 +564,12 @@ class _BookingPageState extends State<BookingPage> {
       if (failure.statusCode == 409) {
         _requestInProgress = false;
         await _refreshAppointments(force: true);
+        if (!mounted) return;
+        if (failure.code == 'UPCOMING_APPOINTMENT_EXISTS' ||
+            failure.message.toLowerCase().contains('upcoming appointment')) {
+          _showUpcomingAppointmentDialog(failure.message);
+          return;
+        }
       }
       _showActionMessage(failure.message, isError: true);
     } on Exception catch (error, stackTrace) {
@@ -638,6 +679,33 @@ class _BookingPageState extends State<BookingPage> {
       _actionMessage = message;
       _actionIsError = isError;
     });
+  }
+
+  void _showUpcomingAppointmentDialog(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(
+          Icons.event_busy_outlined,
+          color: Theme.of(dialogContext).colorScheme.error,
+        ),
+        title: const Text('Upcoming appointment already exists'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _showMyAppointmentsDialog();
+            },
+            child: const Text('View appointments'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1102,8 +1170,7 @@ class _DetailsCard extends StatelessWidget {
     final availableSlots = selected == null
         ? <String>[]
         : slots.where((time) {
-            return !hasUpcomingAppointment &&
-                !_slotPast(selected, time, now) &&
+            return !_slotPast(selected, time, now) &&
                 duration != null &&
                 _isServiceStartAligned(time, duration) &&
                 _endTime(time, duration) != null &&
@@ -1223,10 +1290,6 @@ class _DetailsCard extends StatelessWidget {
                   const _EmptySlots(
                     message: 'Select a service to see available times.',
                   )
-                else if (hasUpcomingAppointment)
-                  const _EmptySlots(
-                    message: 'Complete or cancel your upcoming appointment before booking another one.',
-                  )
                 else if (availableSlots.isEmpty)
                   const _EmptySlots(
                     message:
@@ -1273,12 +1336,7 @@ class _DetailsCard extends StatelessWidget {
                               selectedDuration == null ||
                               _endTime(time, selectedDuration) == null;
                           final unavailable =
-                              hasUpcomingAppointment ||
-                              past ||
-                              booked ||
-                              closed ||
-                              tooLate ||
-                              purpose == null;
+                              past || booked || closed || tooLate || purpose == null;
                           final isSelected = selectedTime == time;
                           return OutlinedButton(
                             key: ValueKey('booking-time-$time'),
@@ -1379,7 +1437,9 @@ class _DetailsCard extends StatelessWidget {
                         child: Text(
                           isLoading
                               ? 'Loading live appointment availability...'
-                              : 'Appointment requests are sent to the clinic for confirmation.',
+                              : hasUpcomingAppointment
+                              ? 'You can review available dates and times, but must complete or cancel your current appointment before booking another.'
+                              : 'Appointment requests are sent to the clinic for confirmation. Appointments must finish by 6:00 PM.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: secondary,
                             height: 1.45,
@@ -1397,7 +1457,6 @@ class _DetailsCard extends StatelessWidget {
                     onPressed:
                         !isLoading &&
                             !isSubmitting &&
-                            !hasUpcomingAppointment &&
                             selected != null &&
                             selectedTime != null &&
                             purpose != null
