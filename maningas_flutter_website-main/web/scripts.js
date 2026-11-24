@@ -34,6 +34,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const closeVTOBtn = document.getElementById("closeVTOBtn");
   const tryOnScaleInput = document.getElementById("vto-scale");
   const tryOnScaleValue = document.getElementById("vto-scale-value");
+  const tryOnRotationInput = document.getElementById("vto-rotation");
+  const tryOnRotationValue = document.getElementById("vto-rotation-value");
+  const tryOnDistanceInput = document.getElementById("vto-distance");
+  const tryOnDistanceValue = document.getElementById("vto-distance-value");
+  const tryOnHorizontalInput = document.getElementById("vto-horizontal");
+  const tryOnHorizontalValue = document.getElementById("vto-horizontal-value");
   const tryOnCaptureButton = document.getElementById("vto-capture-btn");
   const tryOnCaptureStatus = document.getElementById("vto-capture-status");
   const vtoStatus = document.getElementById("vto-status");
@@ -70,10 +76,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   let hasFrameTarget = false;
   let targetFramePosition = new THREE.Vector3();
   let targetFrameRoll = 0;
+  let autoTargetFrameRoll = 0;
+  let autoTargetFrameX = 0;
+  let autoTargetFrameDepth = 0;
   let targetFrameYaw = Math.PI;
   let targetFrameScale = 1;
   let autoTargetFrameScale = 1;
   let manualTryOnScale = 1;
+  let manualTryOnRotation = 0;
+  let manualTryOnDepth = 0;
+  let manualTryOnHorizontal = 0;
   let lastFrameRenderTimestamp = 0;
 
   let frameModelNormalizedScale = 1;
@@ -1115,8 +1127,20 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       manualTryOnScale = 1;
       autoTargetFrameScale = 1;
+      manualTryOnRotation = 0;
+      manualTryOnDepth = 0;
+      manualTryOnHorizontal = 0;
+      autoTargetFrameRoll = 0;
+      autoTargetFrameX = 0;
+      autoTargetFrameDepth = 0;
       if (tryOnScaleInput) tryOnScaleInput.value = "100";
       if (tryOnScaleValue) tryOnScaleValue.textContent = "100%";
+      if (tryOnRotationInput) tryOnRotationInput.value = "0";
+      if (tryOnRotationValue) tryOnRotationValue.textContent = "0°";
+      if (tryOnDistanceInput) tryOnDistanceInput.value = "0";
+      if (tryOnDistanceValue) tryOnDistanceValue.textContent = "0 mm";
+      if (tryOnHorizontalInput) tryOnHorizontalInput.value = "0";
+      if (tryOnHorizontalValue) tryOnHorizontalValue.textContent = "0 mm";
       if (tryOnCaptureStatus) tryOnCaptureStatus.textContent = "";
 
       setVTOStatus("Loading 3D frame...");
@@ -1371,7 +1395,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       };
       const eyeCenterWorld = viewportPointToWorld(eyeCenterViewport, worldZ);
 
+      autoTargetFrameX = eyeCenterWorld.x;
+      autoTargetFrameDepth = eyeCenterWorld.z;
       targetFramePosition.copy(eyeCenterWorld);
+      targetFramePosition.x =
+        autoTargetFrameX + manualTryOnHorizontal / 100;
+      targetFramePosition.z =
+        autoTargetFrameDepth + manualTryOnDepth / 100;
 
       /* =====================================================
          HEAD TILT
@@ -1383,7 +1413,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const angle = Math.atan2(deltaY, deltaX);
 
-      targetFrameRoll = -angle;
+      autoTargetFrameRoll = -angle;
+      targetFrameRoll =
+        autoTargetFrameRoll + THREE.MathUtils.degToRad(manualTryOnRotation);
 
       const viewportWidth = Math.max(modalContainer.clientWidth, 1);
       const displaySize = {
@@ -1727,6 +1759,59 @@ document.addEventListener("DOMContentLoaded", async () => {
       targetFrameScale = autoTargetFrameScale * manualTryOnScale;
       if (frameModel && hasFrameTarget) {
         frameModel.scale.setScalar(targetFrameScale);
+      }
+    });
+  }
+
+  if (tryOnRotationInput) {
+    tryOnRotationInput.addEventListener("input", () => {
+      manualTryOnRotation = Math.max(
+        -45,
+        Math.min(45, Number(tryOnRotationInput.value)),
+      );
+      if (tryOnRotationValue) {
+        tryOnRotationValue.textContent = `${manualTryOnRotation}°`;
+      }
+      targetFrameRoll =
+        autoTargetFrameRoll + THREE.MathUtils.degToRad(manualTryOnRotation);
+      if (frameModel && hasFrameTarget) {
+        frameModel.rotation.z = targetFrameRoll;
+      }
+    });
+  }
+
+  if (tryOnDistanceInput) {
+    tryOnDistanceInput.addEventListener("input", () => {
+      manualTryOnDepth = Math.max(
+        -100,
+        Math.min(100, Number(tryOnDistanceInput.value)),
+      );
+      if (tryOnDistanceValue) {
+        tryOnDistanceValue.textContent =
+          `${manualTryOnDepth > 0 ? "+" : ""}${manualTryOnDepth} mm`;
+      }
+      targetFramePosition.z =
+        autoTargetFrameDepth + manualTryOnDepth / 100;
+      if (frameModel && hasFrameTarget) {
+        frameModel.position.z = targetFramePosition.z;
+      }
+    });
+  }
+
+  if (tryOnHorizontalInput) {
+    tryOnHorizontalInput.addEventListener("input", () => {
+      manualTryOnHorizontal = Math.max(
+        -50,
+        Math.min(50, Number(tryOnHorizontalInput.value)),
+      );
+      if (tryOnHorizontalValue) {
+        tryOnHorizontalValue.textContent =
+          `${manualTryOnHorizontal > 0 ? "+" : ""}${manualTryOnHorizontal} mm`;
+      }
+      targetFramePosition.x =
+        autoTargetFrameX + manualTryOnHorizontal / 100;
+      if (frameModel && hasFrameTarget) {
+        frameModel.position.x = targetFramePosition.x;
       }
     });
   }

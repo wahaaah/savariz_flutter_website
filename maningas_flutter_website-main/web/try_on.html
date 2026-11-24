@@ -31,17 +31,17 @@
       }
       #vto-controls {
         position: absolute; z-index: 5; right: 12px; bottom: 12px; left: 12px;
-        display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px;
+        display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px;
         align-items: center; padding: 12px; border-radius: 12px;
         background: #0f172acc; color: white;
         padding-bottom: calc(12px + env(safe-area-inset-bottom));
       }
-      #vto-scale-control {
+      .vto-range-control {
         min-width: 0; display: flex; align-items: center; gap: 10px;
         font: 600 13px/1.3 system-ui, sans-serif;
       }
-      #vto-scale { min-width: 0; flex: 1; accent-color: #3b82f6; touch-action: pan-y; }
-      #vto-scale-value { width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+      .vto-range-control input { min-width: 0; flex: 1; accent-color: #3b82f6; touch-action: pan-y; }
+      .vto-range-control output { width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
       #vto-capture-btn {
         min-height: 44px; padding: 0 16px; border: 0; border-radius: 9px;
         background: #2563eb; color: white; font: 700 14px system-ui, sans-serif;
@@ -73,10 +73,25 @@
         <div id="modal-container"></div>
         <div id="vto-status">Preparing virtual try-on...</div>
         <div id="vto-controls">
-          <label id="vto-scale-control" for="vto-scale">
+          <label class="vto-range-control" for="vto-scale">
             <span>Frame size</span>
             <input id="vto-scale" type="range" min="70" max="130" step="1" value="100" />
             <output id="vto-scale-value" for="vto-scale">100%</output>
+          </label>
+          <label class="vto-range-control" for="vto-rotation">
+            <span>Rotate</span>
+            <input id="vto-rotation" type="range" min="-45" max="45" step="1" value="0" />
+            <output id="vto-rotation-value" for="vto-rotation">0°</output>
+          </label>
+          <label class="vto-range-control" for="vto-distance">
+            <span>Distance</span>
+            <input id="vto-distance" type="range" min="-100" max="100" step="1" value="0" />
+            <output id="vto-distance-value" for="vto-distance">0 mm</output>
+          </label>
+          <label class="vto-range-control" for="vto-horizontal">
+            <span>Left / right</span>
+            <input id="vto-horizontal" type="range" min="-50" max="50" step="1" value="0" />
+            <output id="vto-horizontal-value" for="vto-horizontal">0 mm</output>
           </label>
           <button id="vto-capture-btn" type="button" disabled>Take photo</button>
           <span id="vto-capture-status" role="status" aria-live="polite"></span>
