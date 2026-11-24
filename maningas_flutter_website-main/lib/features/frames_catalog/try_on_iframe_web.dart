@@ -23,7 +23,7 @@ class TryOnIframeState extends State<TryOnIframe> {
     final iframe = element as web.HTMLIFrameElement;
     _iframe = iframe;
     iframe.title = 'Virtual Try-On camera';
-    iframe.allow = 'camera';
+    iframe.allow = 'camera *; autoplay *';
     iframe.style
       ..border = '0'
       ..width = '100%'

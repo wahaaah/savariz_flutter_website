@@ -229,7 +229,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       vtoStatus.textContent = message;
     }
     if (tryOnCaptureButton) {
-      tryOnCaptureButton.disabled = !/face detected/i.test(message);
+      tryOnCaptureButton.disabled =
+        !cameraVideo ||
+        cameraVideo.readyState < 2 ||
+        cameraVideo.videoWidth <= 0 ||
+        cameraVideo.videoHeight <= 0;
     }
   }
 
@@ -1704,32 +1708,60 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function captureTryOnPhoto() {
-    if (!frameModel || !frameModel.visible || !hasFrameTarget) {
-      if (tryOnCaptureStatus) {
-        tryOnCaptureStatus.textContent =
-          "Center your face until the frame appears.";
-      }
-      return;
-    }
-
     const source = threeRenderer?.domElement;
-    if (!source || !source.width || !source.height) {
+    if (!cameraVideo || cameraVideo.readyState < 2 ||
+        cameraVideo.videoWidth <= 0 || cameraVideo.videoHeight <= 0) {
       if (tryOnCaptureStatus) {
-        tryOnCaptureStatus.textContent = "The Try-On preview is not ready yet.";
+        tryOnCaptureStatus.textContent = "The camera preview is not ready yet.";
       }
       return;
     }
 
     try {
       const photo = document.createElement("canvas");
-      photo.width = source.width;
-      photo.height = source.height;
+      photo.width = source?.width || cameraVideo.videoWidth;
+      photo.height = source?.height || cameraVideo.videoHeight;
       const context = photo.getContext("2d");
       if (!context) throw new Error("Unable to prepare the photo.");
 
+      const photoAspect = photo.width / photo.height;
+      const videoAspect = cameraVideo.videoWidth / cameraVideo.videoHeight;
+      let cropWidth = cameraVideo.videoWidth;
+      let cropHeight = cameraVideo.videoHeight;
+      let cropX = 0;
+      let cropY = 0;
+
+      if (videoAspect > photoAspect) {
+        cropWidth = cameraVideo.videoHeight * photoAspect;
+        cropX = (cameraVideo.videoWidth - cropWidth) / 2;
+      } else {
+        cropHeight = cameraVideo.videoWidth / photoAspect;
+        cropY = (cameraVideo.videoHeight - cropHeight) / 2;
+      }
+
+      context.save();
       context.translate(photo.width, 0);
       context.scale(-1, 1);
-      context.drawImage(source, 0, 0);
+      context.drawImage(
+        cameraVideo,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        0,
+        0,
+        photo.width,
+        photo.height,
+      );
+      context.restore();
+
+      if (source && source.width && source.height) {
+        context.save();
+        context.translate(photo.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(source, 0, 0, photo.width, photo.height);
+        context.restore();
+      }
 
       const link = document.createElement("a");
       link.download = `gonzales-vision-try-on-${Date.now()}.jpg`;
