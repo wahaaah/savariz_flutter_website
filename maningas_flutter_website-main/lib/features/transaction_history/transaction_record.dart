@@ -42,6 +42,9 @@ class TransactionRecord {
     this.discountName,
     this.discountPercent,
     this.discountAmount,
+    this.frameDiscountName,
+    this.frameDiscountPercent,
+    this.frameDiscountAmount,
     this.discountIdProofUrl,
   });
 
@@ -108,6 +111,13 @@ class TransactionRecord {
       discountAmount: _optionalDouble(
         json['discount_amount'] ?? json['discount'],
       ),
+      frameDiscountName: _optionalString(json['frame_discount_name']),
+      frameDiscountPercent: _optionalDouble(
+        json['frame_discount_percent'],
+      ),
+      frameDiscountAmount: _optionalDouble(
+        json['frame_discount_amount'],
+      ),
       discountIdProofUrl: _optionalString(
         json['discount_id_proof_url'] ?? json['id_proof_url'],
       ),
@@ -129,6 +139,9 @@ class TransactionRecord {
   final double? discountAmount;
   final double? discountPercent;
   final String? discountName;
+  final String? frameDiscountName;
+  final double? frameDiscountPercent;
+  final double? frameDiscountAmount;
   final String? discountIdProofUrl;
   final double? vat;
   final double? total;

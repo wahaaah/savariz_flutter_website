@@ -969,6 +969,18 @@ class _TransactionCard extends StatelessWidget {
               discount: true,
             ),
           ],
+          if (transaction.frameDiscountAmount != null &&
+              transaction.frameDiscountAmount! > 0) ...[
+            const SizedBox(height: 8),
+            _ChargeRow(
+              label:
+                  'Frame Promo'
+                  '${transaction.frameDiscountName == null ? '' : ' (${transaction.frameDiscountName})'}'
+                  '${transaction.frameDiscountPercent != null && transaction.frameDiscountPercent! > 0 ? ' (${_formatNumber(transaction.frameDiscountPercent!)}%)' : ''}',
+              value: '-${_formatCurrency(transaction.frameDiscountAmount)}',
+              discount: true,
+            ),
+          ],
           const SizedBox(height: 8),
           _ChargeRow(
             label: 'VAT',
